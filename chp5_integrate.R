@@ -7,6 +7,7 @@
   library(stringr)
   library(sp)
   library(plyr)
+  library(RSQLite)
   
  ## Set data and code directory
  

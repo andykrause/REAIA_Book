@@ -43,7 +43,7 @@
     
     # Download
     download.file(url=paste0('ftp://ftp.kingcounty.gov/gis-web/web/',
-                             'GISData/parcel_address_SHP.zip'), 
+                             'GISData/parcel_SHP.zip'), 
                   destfile=file.path(data.dir, 'raw_zip_files', 'parcel_shapefile.zip'))
   }
   

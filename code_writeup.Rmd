@@ -213,20 +213,39 @@ We start by loading a number of packages or libraries that will be needed to com
 
 ```
 
+Next, the user must enter the directory where the data is stored, **data.dir** (the same directory from Chapter 4) and the directory where the code has been downloaded, **code.dir**. 
+```{r eval=FALSE}
+
+  data.dir <- 'c:/temp/'
+  code.dir <- 'c:/dropbox/research/bigdatabook/code/'
+
+```
+
+
+
+
+We also create a name and path for the database into which we'll integrate all of the data. 
 
 ```{r eval=FALSE}
 
+  sales.db <- file.path(data.dir, 'assessorData.db')
 
+```
 
-## Set data and code directory
- 
-  #data.dir <- 'c:/dropbox/research/bigdatabook/data/'
-  data.dir <- 'c:/temp/'
-  code.dir <- 'c:/dropbox/research/bigdatabook/code/'
-  
+There a number of parameters that must be set to define the integration and cleaning process. They are as follows:
+
+1. **sale.years**: The time range of sales to consider
+2. **data.year**: The year from which to use the parcel and assessor data
+3. **trans.limit**: The max number of transactions allowed per property in the time period (eliminates flips and other non-arms length situations)
+4. **trim.list**: A list of fields and associated codes that are not considered to be valid sales transactions.  The details of these are explained more below.  
+5. **over.write**: Whether or not to overwrite existing files in the database.  
+
+Users are cautioned not to change these parameter unless they have appropriately downloaded different assessor or geographic files, and/or wish to change the scope of the sales considered.  
+
+```{r eval=FALSE}
+
  ## Set cleaning parameters
  
-  sales.db <- file.path(data.dir, 'assessorData.db')
   sale.years <- c(2011, 2016)  
   data.year <- 2016
   trans.limit <- 5                

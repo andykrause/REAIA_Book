@@ -8,6 +8,7 @@
   library(sp)
   library(plyr)
   library(RSQLite)
+  library(RODBC)
   
  ## Set data and code directory
  
@@ -15,23 +16,14 @@
   data.dir <- 'c:/temp/'
   code.dir <- 'c:/dropbox/research/bigdatabook/code/'
   
- ## Set cleaning parameters
- 
-  sales.db <- file.path(data.dir, 'assessorData.db')
-  sale.years <- c(2011, 2016)  
-  data.year <- 2016
-  trans.limit <- 5                
-  trim.list <- list(SaleReason=2:19,  
-                    SaleInstrument=c(0, 1, 4:28),
-                    SaleWarning=paste0(" ", c(1:2, 5:9, 11:14, 18:23, 25, 27,
-                                              31:33, 37, 39, 43, 46, 48, 49,
-                                              50:53, 59, 61, 63, 64, 66), " "))
-  over.write <- TRUE                 
-  
  ## Load custom source files
- 
- source(paste0(code.dir, 'custom_functions.R'))
- 
+  
+  source(paste0(code.dir, 'custom_functions.R'))  
+  
+ ## Set the database path and name  
+  
+  sales.db <- file.path(data.dir, 'assessorData.db')
+  
 ### Integrate assessor data into single db file ------------------------------------------
 
  ## Convert CSVs to SQLite
@@ -54,6 +46,21 @@
   
 ### Initial clean of sales to eliminate non-relevant observations ------------------------ 
  
+  ## Set cleaning parameters
+  
+  sale.years <- c(2011, 2016)  
+  data.year <- 2016
+  trans.limit <- 5                
+  trim.list <- list(SaleReason=2:19,  
+                    SaleInstrument=c(0, 1, 4:28),
+                    SaleWarning=paste0(" ", c(1:2, 5:9, 11:14, 18:23, 25, 27,
+                                              31:33, 37, 39, 43, 46, 48, 49,
+                                              50:53, 59, 61, 63, 64, 66), " "))
+  over.write <- TRUE                 
+  
+  
+  
+  
   # Read in Sales File
   sales.conn <- dbConnect(dbDriver('SQLite'), sales.db)
   raw.sales <- dbReadTable(sales.conn, 'AllSales')
@@ -157,7 +164,27 @@
   
  ## Clean up assessor data
   
-  ### TO DO:  Add column filtering here
+  # Limit columns in parcel data
+  
+  parcel.data <- parcel.data[,c('pinx', 'Area', 'SubArea', 'CurrentZoning',
+                                'HBUAsIfVacant', 'PresentUse', 'SqFtLot', 
+                                'Topography', 'RestrictiveSzShape', 
+                                'MtRainier', 'Olympics', 'Cascades', 
+                                'Territorial', 'SeattleSkyline', 'PugetSound',
+                                'LakeWashington', 'LakeSammamish', 
+                                'SmallLakeRiverCreek', 'OtherView',
+                                'WfntLocation', 'WfntFootage', 'WfntBank',
+                                'TrafficNoise', 'Contamination')]
+ 
+  # Limit Columns in Res Bldg 
+ 
+  resbldg.data <- resbldg.data[,c('pinx', 'BldgNbr', 'NbrLivingUnits',
+                                  'Stories', 'BldgGrade', 'SqFtTotLiving',
+                                  'SqFtTotBasement', 'SqFtFinBasement',
+                                  'SqFtGarageBasement', 'SqFtGarageAttached',
+                                  'SqFtDeck', 'Bedrooms', 'BathHalfCount', 
+                                  'Bath3qtrCount', 'BathFullCount', 'YrBuilt',
+                                  'YrRenovated', 'Condition')]
   
   resbldg.data <- resbldg.data[resbldg.data$BldgNbr == 1, ]
   resbldg.data <- resbldg.data[!duplicated(resbldg.data$pinx), ]
@@ -175,7 +202,7 @@
  ## Convert the parcel file to centroids
 
   # Load in parcel file
-  parcels <- st_read(file.path(data.dir, 'geographic/parcel_address/parcel_address.shp'),
+  parcels <- st_read(file.path(data.dir, 'geographic/parcel/parcel.shp'),
                      quiet=TRUE)
   
   # Tranform to appropriate CRS
@@ -192,7 +219,7 @@
                           latitude=lats)
   
   # Limit to those parcels in the sale dataset
-  parcel.xy <- parcel.xy[parcel.xy$pinx %in% trim.salesx$pinx, ]
+  parcel.xy <- parcel.xy[parcel.xy$pinx %in% trim.sales$pinx, ]
 
   # Conver to a spdf
   parcel.sp <- SpatialPointsDataFrame(coords=cbind(parcel.xy$longitude,

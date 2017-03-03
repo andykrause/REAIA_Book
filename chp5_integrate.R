@@ -107,27 +107,29 @@
   
 ### Label Sales by Recond and use --------------------------------------------------------
   
-  # Read in Data
-  readData(dbName=sales.db,
-           dataYear=2016,
-           verbose=TRUE)
-    
-  # Add Present Uses
-  trim.sales$present.use <- parcel.data$PresentUse[match(trim.sales$pinx,
-                                                  parcel.data$pinx)]
-
-  # Add the record type
-  trim.sales$res.record <- resbldg.data$BldgNbr[match(trim.sales$pinx,
-                                              resbldg.data$pinx)]
+ ## Read in Data
   
-  trim.sales$res.record <- ifelse(is.na(trim.sales$res.record), 0, trim.sales$res.record)
+  # Parcel Data
+  parcel.data <- buildPinx(dbReadTable(sales.conn, 'parcel'))
+  
+  # Res Building data
+  resbldg.data <- buildPinx(dbReadTable(sales.conn, 'resbldg'))
+  
+  # Add the record type
+  clean.sales$res.record <- resbldg.data$BldgNbr[match(clean.sales$pinx,
+                                                      resbldg.data$pinx)]
+  clean.sales$res.record <- ifelse(is.na(clean.sales$res.record), 0, clean.sales$res.record)
   
   # Remove those with non-residential record type or with more than one dwelling on it  
-  trim.sales <- trim.sales[trim.sales$res.record == 1, ]
-    
+  clean.sales <- clean.sales[clean.sales$res.record == 1, ]
+  
+  # Add Present Uses
+  clean.sales$present.use <- parcel.data$PresentUse[match(clean.sales$pinx,
+                                                  parcel.data$pinx)]
+  
   # Remove those not with SFR or Townhome use category
-  trim.sales <- trim.sales[trim.sales$present.use == 2 |
-                           trim.sales$present.use == 29, ]
+  clean.sales <- clean.sales[clean.sales$present.use == 2 |
+                           clean.sales$present.use == 29, ]
   
   # Write out
   tExists <- dbExistsTable(sales.conn, 'labeledSales')
@@ -136,24 +138,10 @@
     dbRemoveTable(sales.conn, 'labeledSales')
   }
   
-  dbWriteTable(sales.conn, 'labeledSales', trim.sales, row.names=FALSE)
+  dbWriteTable(sales.conn, 'labeledSales', clean.sales, row.names=FALSE)
   
-  # Clean up
-  for(delX in c('parcel.data','resbldg.data')){
-    rm(list=ls(pattern=glob2rx(paste0(delX,"*"))))
-  }
-  gc()  
- 
 ### Integrate Sales data with assessor data ----------------------------------------------  
-  
- ## Read in full data  
-  
-  # Parcel Data
-  parcel.data <- buildPinx(dbReadTable(sales.conn, 'parcel'))
- 
-  # Res Building data
-  resbldg.data <- buildPinx(dbReadTable(sales.conn, 'resbldg'))
-  
+
  ## Clean up assessor data
   
   # Limit columns in parcel data
@@ -178,16 +166,19 @@
                                   'Bath3qtrCount', 'BathFullCount', 'YrBuilt',
                                   'YrRenovated', 'Condition')]
   
-  resbldg.data <- resbldg.data[resbldg.data$BldgNbr == 1, ]
+  # Remove multi-structure sites
+  
+  resbldg.data <- resbldg.data[order(resbldg.data$BldgNbr), ]
   resbldg.data <- resbldg.data[!duplicated(resbldg.data$pinx), ]
-
+  resbldg.data <- resbldg.data[resbldg.data$BldgNbr == 1, ]
+  
  ## Integrate
   
   # Add parcel data to sales
-  trim.sales <- merge(trim.sales, parcel.data, by='pinx')
+  clean.sales <- merge(clean.sales, parcel.data, by='pinx')
  
   # Add res bldg data to sales
-  trim.sales <- merge(trim.sales, resbldg.data, by='pinx')
+  clean.sales <- merge(clean.sales, resbldg.data, by='pinx')
  
 ### Integrate the geospatial data (parcel and beat) with the sales -----------------------  
   
@@ -211,7 +202,7 @@
                           latitude=lats)
   
   # Limit to those parcels in the sale dataset
-  parcel.xy <- parcel.xy[parcel.xy$pinx %in% trim.sales$pinx, ]
+  parcel.xy <- parcel.xy[parcel.xy$pinx %in% clean.sales$pinx, ]
 
   # Conver to a spdf
   parcel.sp <- SpatialPointsDataFrame(coords=cbind(parcel.xy$longitude,
@@ -257,7 +248,7 @@
  ## Add location data to sales  
   
   # Join data
-  final.sales <- merge(trim.sales, 
+  final.sales <- merge(clean.sales, 
                        parcel.sf[ , c('pinx', 'beat', 'longitude', 'latitude')],
                        by='pinx')
     
@@ -267,7 +258,7 @@
   if(tExists) {
     dbRemoveTable(sales.conn, 'finalSales')
   }
-  dbWriteTable(sales.conn, 'finalSales', trim.sales, row.names=FALSE)
+  dbWriteTable(sales.conn, 'finalSales', final.sales, row.names=FALSE)
 
   # Close
   dbDisconnect(sales.conn)

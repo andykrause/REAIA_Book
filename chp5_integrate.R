@@ -45,22 +45,7 @@
   }
   
 ### Initial clean of sales to eliminate non-relevant observations ------------------------ 
- 
-  ## Set cleaning parameters
-  
-  sale.years <- c(2011, 2016)  
-  data.year <- 2016
-  trans.limit <- 5                
-  trim.list <- list(SaleReason=2:19,  
-                    SaleInstrument=c(0, 1, 4:28),
-                    SaleWarning=paste0(" ", c(1:2, 5:9, 11:14, 18:23, 25, 27,
-                                              31:33, 37, 39, 43, 46, 48, 49,
-                                              50:53, 59, 61, 63, 64, 66), " "))
-  over.write <- TRUE                 
-  
-  
-  
-  
+
   # Read in Sales File
   sales.conn <- dbConnect(dbDriver('SQLite'), sales.db)
   raw.sales <- dbReadTable(sales.conn, 'AllSales')
@@ -78,44 +63,54 @@
   clean.sales <- clean.sales[!is.na(clean.sales$salesDate), ]
   
   # Eliminate Transactions prior to Sales Year Limit
-  clean.sales <- clean.sales[clean.sales$salesYear >= sale.years[1] & 
-                             clean.sales$salesYear <= sale.years[2], ]
+  clean.sales <- clean.sales[clean.sales$salesYear >= 2011 & 
+                             clean.sales$salesYear <= 2016, ]
   
   # Add PINX
   clean.sales <- buildPinx(clean.sales)
   
   # Add trans count and limit by paramter
-  clean.sales <- buildTransCount(clean.sales, transLimit=trans.limit)
+  clean.sales <- buildTransCount(clean.sales, transLimit=5)
   
   # Add MultiParcel sale designation
   clean.sales <- idDup(clean.sales, 'ExciseTaxNbr', newField = 'multiParcel',
                       iddType='labelNonUnique', binNonUq=TRUE)
   
+  # Remove those with multiparcel
+  clean.sales <- clean.sales[clean.sales$multiParcel == 0, ]
+  
   # Add unique IDs
-  trim.sales <- buildSaleUIDs(clean.sales)
+  clean.sales <- buildSaleUIDs(clean.sales)
   
   # Trim sales by Insturment, reason and warning
   # Fix the "Warning" Field.  Add a leading/trailing space for the grep()
-  trim.sales$SaleWarning <- paste(" ", trim.sales$SaleWarning, " ", sep="")
+  clean.sales$SaleWarning <- paste(" ", clean.sales$SaleWarning, " ", sep="")
+  
+  trim.list <- list(SaleReason=2:19,  
+                    SaleInstrument=c(0, 1, 4:28),
+                    SaleWarning=paste0(" ", c(1:2, 5:9, 11:14, 18:23, 25, 27,
+                                              31:33, 37, 39, 43, 46, 48, 49,
+                                              50:53, 59, 61, 63, 64, 66), " "))
   
   for(tL in 1:length(trim.list)){
-    trim.sales <- trimByField(trim.sales, names(trim.list)[tL],
+    clean.sales <- trimByField(clean.sales, names(trim.list)[tL],
                              trimList = unlist(trim.list[tL]))
   }
   
   # Write out
   tExists <- dbExistsTable(sales.conn, 'trimmedSales')
   
-  if(over.write & tExists) {
+  if(tExists) {
     dbRemoveTable(sales.conn, 'trimmedSales')
   }
-  dbWriteTable(sales.conn, 'trimmedSales', trim.sales, row.names=FALSE)
+  dbWriteTable(sales.conn, 'trimmedSales', clean.sales, row.names=FALSE)
   
 ### Label Sales by Recond and use --------------------------------------------------------
   
   # Read in Data
   readData(dbName=sales.db,
-           data.year)
+           dataYear=2016,
+           verbose=TRUE)
     
   # Add Present Uses
   trim.sales$present.use <- parcel.data$PresentUse[match(trim.sales$pinx,
@@ -134,13 +129,10 @@
   trim.sales <- trim.sales[trim.sales$present.use == 2 |
                            trim.sales$present.use == 29, ]
   
-  # Remove those with multiparcel
-  trim.sales <- trim.sales[trim.sales$multiParcel == 0, ]
-
   # Write out
   tExists <- dbExistsTable(sales.conn, 'labeledSales')
   
-  if(over.write & tExists) {
+  if(tExists) {
     dbRemoveTable(sales.conn, 'labeledSales')
   }
   
@@ -272,7 +264,7 @@
   # Write out
   tExists <- dbExistsTable(sales.conn, 'finalSales')
   
-  if(over.write & tExists) {
+  if(tExists) {
     dbRemoveTable(sales.conn, 'finalSales')
   }
   dbWriteTable(sales.conn, 'finalSales', trim.sales, row.names=FALSE)

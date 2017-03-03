@@ -400,65 +400,80 @@ We finish this step of data cleaning by writing the remaining sales observations
 
 ```
 
+#### Integrate Physical Characteristics
 
+In this section we add the land and structure information to the sales and, along the way, do a bit more cleaning of observations that do not meet our research question -- are not arm's length transactions of single family homes. 
 
+We start by reading in the parcel (land) and the residential building (structural) information from the database.  The data are stored in objects names **parcel.data** and **resbldg.data**, respectively. Note that when we read the data in we pass it through the **buildPinx()** function so that each dataset includes the proper key for joining later on. 
 
+```{r eval=FALSE}
+  
+  # Parcel Data
+  parcel.data <- buildPinx(dbReadTable(sales.conn, 'parcel'))
+  
+  # Res Building data
+  resbldg.data <- buildPinx(dbReadTable(sales.conn, 'resbldg'))
+
+```
+
+We first add a field that indicates whether or not each of the sales has a corresponding record in the residential building file.
 
 ```{r eval=FALSE}
 
-
-### Label Sales by Recond and use --------------------------------------------------------
-  
-  # Read in Data
-  readData(dbName=sales.db,
-           dataYear=2016,
-           verbose=TRUE)
-    
-  # Add Present Uses
-  trim.sales$present.use <- parcel.data$PresentUse[match(trim.sales$pinx,
-                                                  parcel.data$pinx)]
-
-  # Add the record type
-  trim.sales$res.record <- resbldg.data$BldgNbr[match(trim.sales$pinx,
+  clean.sales$res.record <- resbldg.data$BldgNbr[match(clean.sales$pinx,
                                               resbldg.data$pinx)]
   
-  trim.sales$res.record <- ifelse(is.na(trim.sales$res.record), 0, trim.sales$res.record)
-  
-  # Remove those with non-residential record type or with more than one dwelling on it  
-  trim.sales <- trim.sales[trim.sales$res.record == 1, ]
-    
-  # Remove those not with SFR or Townhome use category
-  trim.sales <- trim.sales[trim.sales$present.use == 2 |
-                           trim.sales$present.use == 29, ]
-  
+  clean.sales$res.record <- ifelse(is.na(clean.sales$res.record), 0, clean.sales$res.record)
 
-  # Write out
+```
+
+We remove those that do not. 
+
+```{r eval=FALSE}
+
+  clean.sales <- clean.sales[clean.sales$res.record == 1, ]
+
+```
+
+Next, we add the land use designation (*present.use*) to the sales data. 
+
+```{r eval=FALSE}
+
+  clean.sales$present.use <- parcel.data$PresentUse[match(clean.sales$pinx,
+                                                  parcel.data$pinx)]
+
+```
+
+We then remove those observation that are not single family detached or townhome dwellings (essentially eliminating duplexes, triplexes, etc. )
+
+```{r eval=FALSE}
+
+  clean.sales <- clean.sales[clean.sales$present.use == 2 |
+                           clean.sales$present.use == 29, ]
+  
+```
+
+We save this intermitten set of sales to the database, deleting the table if it already exists. 
+
+```{r eval=FALSE}
+
+  # Check if existing
   tExists <- dbExistsTable(sales.conn, 'labeledSales')
   
+  # If existing, remove
   if(tExists) {
     dbRemoveTable(sales.conn, 'labeledSales')
   }
   
-  dbWriteTable(sales.conn, 'labeledSales', trim.sales, row.names=FALSE)
+  # Write table
+  dbWriteTable(sales.conn, 'labeledSales', clean.sales, row.names=FALSE)
+
+```  
+
+Before joining the parcel and residential building data to the sales, we trim down the fields to those we are likely to use in our final analysis.  
   
-  # Clean up
-  for(delX in c('parcel.data','resbldg.data')){
-    rm(list=ls(pattern=glob2rx(paste0(delX,"*"))))
-  }
-  gc()  
- 
-### Integrate Sales data with assessor data ----------------------------------------------  
-  
- ## Read in full data  
-  
-  # Parcel Data
-  parcel.data <- buildPinx(dbReadTable(sales.conn, 'parcel'))
- 
-  # Res Building data
-  resbldg.data <- buildPinx(dbReadTable(sales.conn, 'resbldg'))
-  
- ## Clean up assessor data
-  
+```{r eval=FALSE}
+
   # Limit columns in parcel data
   
   parcel.data <- parcel.data[,c('pinx', 'Area', 'SubArea', 'CurrentZoning',
@@ -480,29 +495,61 @@ We finish this step of data cleaning by writing the remaining sales observations
                                   'SqFtDeck', 'Bedrooms', 'BathHalfCount', 
                                   'Bath3qtrCount', 'BathFullCount', 'YrBuilt',
                                   'YrRenovated', 'Condition')]
-  
-  resbldg.data <- resbldg.data[resbldg.data$BldgNbr == 1, ]
-  resbldg.data <- resbldg.data[!duplicated(resbldg.data$pinx), ]
 
- ## Integrate
+```
+
+To ensure that no multiple dwelling properties (two homes, one lot) are included in our analysis, we eliminate all residential dwelling records that have more than one structure on the property
+
+```{r eval=FALSE}
+
+  # Order by building number
+  resbldg.data <- resbldg.data[order(resbldg.data$BldgNbr), ]
   
+  # Remove duplicates
+  resbldg.data <- resbldg.data[!duplicated(resbldg.data$pinx), ]
+  
+  # Remove any oddities with building > 2 as the first building 
+  resbldg.data <- resbldg.data[resbldg.data$BldgNbr == 1, ]
+
+```
+
+We then append both the parcel and then the residential building data to the sales observations.  The joining process represents an inner join, such that only observations the match from both datasets are maintained in the joined data. 
+
+```{r eval=FALSE}
+
   # Add parcel data to sales
-  trim.sales <- merge(trim.sales, parcel.data, by='pinx')
+  clean.sales <- merge(clean.sales, parcel.data, by='pinx')
  
   # Add res bldg data to sales
-  trim.sales <- merge(trim.sales, resbldg.data, by='pinx')
- 
-### Integrate the geospatial data (parcel and beat) with the sales -----------------------  
-  
- ## Convert the parcel file to centroids
+  clean.sales <- merge(clean.sales, resbldg.data, by='pinx')
 
-  # Load in parcel file
+```
+
+### Integrating Location Data
+
+In order to determine the absolute location of our observation as well as to assign Police Beat idenftification we need to add location data to our sales observations. We do this in two steps.  First we add latitude and longitude values from the King County GIS parcel shapefile.  Then we overlay the Seattle City Police Beat information on these points and assign each sale to a Beat.  
+
+We start by reading in the parcel polygon file that we downloaded and unzipped in Chapter 4.
+
+```{r eval=FALSE}
+
   parcels <- st_read(file.path(data.dir, 'geographic/parcel/parcel.shp'),
                      quiet=TRUE)
-  
-  # Tranform to appropriate CRS
+
+```
+
+As this file is initially in a UTM coordinate reference systems (CRS) and does not have standard latitude and longitude values we convert it to an EPSG 4326 CRS. 
+
+```{r eval=FALSE}
+
   parcels <- st_transform(parcels, 4326)
-  
+
+```
+
+Next, the parcel file contains polygon geometry.  For the purposes of this study we need point data, so we convert the parcels to points by taking the centroid value of each parcel.  We then extract these into longitude and latitude values and combine them into a data frame that has the parcel identification number (converted to *pinx*) as the longitude and latitude of every parcel in the county (**parcel.xy**).
+
+```{r eval=FALSE}
+
   # Extract centroid Lat longs
   parcel.centroids <- st_centroid(parcels)
   longs <- unlist(lapply(parcel.centroids, function(x) x[1]))
@@ -513,10 +560,21 @@ We finish this step of data cleaning by writing the remaining sales observations
                           longitude=longs,
                           latitude=lats)
   
-  # Limit to those parcels in the sale dataset
-  parcel.xy <- parcel.xy[parcel.xy$pinx %in% trim.sales$pinx, ]
+```
 
-  # Conver to a spdf
+We then limit this dataset to only those properties that are also located in the sales dataset. 
+
+```{r eval=FALSE}
+
+  parcel.xy <- parcel.xy[parcel.xy$pinx %in% clean.sales$pinx, ]
+
+```
+
+Next we convert this aspatial data to a spatially explicit, *simple feature* object class in R.  To do so, we first convert it to a standard Spatial Points Data Frame, then convert to Simple Features and then change the CRS to EPSG 4326 so that the spatial coordinates are in standard latitude and longitude. 
+
+```{r eval=FALSE}
+
+  # Convert to a spdf
   parcel.sp <- SpatialPointsDataFrame(coords=cbind(parcel.xy$longitude,
                                                    parcel.xy$latitude),
                                       data=parcel.xy, 
@@ -527,8 +585,14 @@ We finish this step of data cleaning by writing the remaining sales observations
   
   # Convert the CRS to lat/long
   parcel.sf <- transform(parcel.sf, 4326)
-      
- ## Prepare the Police Beats file
+
+```
+
+We now shift to preparing the Seattle Police Beats spatial data. 
+
+We start by reading in the Beats polygon shapefile that we downloaded and unzipped in Chapter 4. We also convert this to have an EPSG 4326 CRS. 
+
+```{r eval=FALSE}
 
  # Read in the Police Beats Data
   beats <- st_read(file.path(data.dir, 'beats/SPD_BEATS_WGS84.shp'),
@@ -537,11 +601,20 @@ We finish this step of data cleaning by writing the remaining sales observations
  # Transform the Coordinate Reference System  
   beats <- st_transform(beats, 4326)
   
- # Remove the beats in the water precincts  
+```  
+
+A few of the polygons in the Beat shapefile are filler areas out over the water.  We remove these. 
+  
+```{r eval=FALSE}
+  
   beats <- beats[beats$first_prec != '', ]
-  
-## Add the Beat Identification to the sales
-  
+
+```
+
+Next, we overlay the Beat information onto the parcel point data.  This is a three step process.  First we add a new varialbe to the parcel points and set it to 'NONE'.  We then perform an intersect function which gives us a list of which parcels are in which beats.  Finally, we loop through each beat and assign the beat name to the parcel which fall in its jurisdiction. 
+
+```{r eval=FALSE}
+
   # Set null values
   parcel.sf$beat <- 'NONE'
   
@@ -554,28 +627,41 @@ We finish this step of data cleaning by writing the remaining sales observations
    parcel.sf$beat[ov.id] <- as.character(beats$beat[i])
   }
   
-  # Remove sales not in Beat Precincts
+```
+
+Parcels that fall outside of the Beat area (outside of the City of Seattle) are then removed. 
+```{r eval=FALSE}
+
   parcel.sf <- parcel.sf[parcel.sf$beat != "NONE", ]  
 
- ## Add location data to sales  
-  
-  # Join data
-  final.sales <- merge(trim.sales, 
+```
+
+The parcel information -- complete with latitude, longitude and Beat name -- is added to the sales information.  Sales that do not match a parcel within the Beat area are dropped. 
+
+```{r eval=FALSE}
+
+  final.sales <- merge(clean.sales, 
                        parcel.sf[ , c('pinx', 'beat', 'longitude', 'latitude')],
                        by='pinx')
-    
-  # Write out
+```
+
+Finally, we write this data out to the database under the name 'finalsales'. When we are finished writing the data we close the connection to the database. 
+
+```{r eval=FALSE}
+
+  # Test if already present
   tExists <- dbExistsTable(sales.conn, 'finalSales')
   
+  # Remove if present
   if(tExists) {
     dbRemoveTable(sales.conn, 'finalSales')
   }
-  dbWriteTable(sales.conn, 'finalSales', trim.sales, row.names=FALSE)
 
-  # Close
+  # Write out
+  dbWriteTable(sales.conn, 'finalSales', final.sales, row.names=FALSE)
+
+  # Close Database connection
   dbDisconnect(sales.conn)
-
-
 
 ```
 

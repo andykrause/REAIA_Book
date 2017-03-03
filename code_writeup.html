@@ -340,81 +340,66 @@ $(document).ready(function () {
 <li>SaleWarning: A large set of warning flags that are applied to sales</li>
 </ol>
 <p>More information on each of these can be found by examining the King County Assessors lookup table, available at: <a href="http:/aqua.kingcounty.gov/extranet/assessor/Lookup.zip" class="uri">http:/aqua.kingcounty.gov/extranet/assessor/Lookup.zip</a></p>
-<pre class="r"><code>  # Trim sales by Insturment, reason and warning
-  # Fix the &quot;Warning&quot; Field.  Add a leading/trailing space for the grep()
+<p>We clean the sales based on these three labeled fields using a three step process. First we add blank spaces to both sides of the text field in the <em>SaleWarning</em> column to facilitate appropriate search processes. Next, we create a list of the codes or lables which should be removed from each field. Finally, we trim each field down based on these codes or labels using the <strong>trimByField</strong> custom function.</p>
+<pre class="r"><code>  # Fix the &quot;Warning&quot; Field.  Add a leading/trailing space for the grep()
   clean.sales$SaleWarning &lt;- paste(&quot; &quot;, clean.sales$SaleWarning, &quot; &quot;, sep=&quot;&quot;)
   
+  # Compile a list of invalid codes or labels
   trim.list &lt;- list(SaleReason=2:19,  
                     SaleInstrument=c(0, 1, 4:28),
                     SaleWarning=paste0(&quot; &quot;, c(1:2, 5:9, 11:14, 18:23, 25, 27,
                                               31:33, 37, 39, 43, 46, 48, 49,
                                               50:53, 59, 61, 63, 64, 66), &quot; &quot;))
   
+  # Trim observations with invalid codes or labels
   for(tL in 1:length(trim.list)){
     clean.sales &lt;- trimByField(clean.sales, names(trim.list)[tL],
                              trimList = unlist(trim.list[tL]))
-  }
-  
-  # Write out
+  }</code></pre>
+<p>We finish this step of data cleaning by writing the remaining sales observations back to the database under the name <strong>trimmedSales</strong>. To do so, we check if this table already exists, if so we delete the existing table in the database and then we write this table to the database.</p>
+<pre class="r"><code>  # Write out
   tExists &lt;- dbExistsTable(sales.conn, 'trimmedSales')
   
   if(tExists) {
     dbRemoveTable(sales.conn, 'trimmedSales')
   }
   dbWriteTable(sales.conn, 'trimmedSales', clean.sales, row.names=FALSE)</code></pre>
-<pre class="r"><code>### Label Sales by Recond and use --------------------------------------------------------
+</div>
+<div id="integrate-physical-characteristics" class="section level4">
+<h4>Integrate Physical Characteristics</h4>
+<p>In this section we add the land and structure information to the sales and, along the way, do a bit more cleaning of observations that do not meet our research question – are not arm’s length transactions of single family homes.</p>
+<p>We start by reading in the parcel (land) and the residential building (structural) information from the database. The data are stored in objects names <strong>parcel.data</strong> and <strong>resbldg.data</strong>, respectively. Note that when we read the data in we pass it through the <strong>buildPinx()</strong> function so that each dataset includes the proper key for joining later on.</p>
+<pre class="r"><code>  # Parcel Data
+  parcel.data &lt;- buildPinx(dbReadTable(sales.conn, 'parcel'))
   
-  # Read in Data
-  readData(dbName=sales.db,
-           dataYear=2016,
-           verbose=TRUE)
-    
-  # Add Present Uses
-  trim.sales$present.use &lt;- parcel.data$PresentUse[match(trim.sales$pinx,
-                                                  parcel.data$pinx)]
-
-  # Add the record type
-  trim.sales$res.record &lt;- resbldg.data$BldgNbr[match(trim.sales$pinx,
+  # Res Building data
+  resbldg.data &lt;- buildPinx(dbReadTable(sales.conn, 'resbldg'))</code></pre>
+<p>We first add a field that indicates whether or not each of the sales has a corresponding record in the residential building file.</p>
+<pre class="r"><code>  clean.sales$res.record &lt;- resbldg.data$BldgNbr[match(clean.sales$pinx,
                                               resbldg.data$pinx)]
   
-  trim.sales$res.record &lt;- ifelse(is.na(trim.sales$res.record), 0, trim.sales$res.record)
-  
-  # Remove those with non-residential record type or with more than one dwelling on it  
-  trim.sales &lt;- trim.sales[trim.sales$res.record == 1, ]
-    
-  # Remove those not with SFR or Townhome use category
-  trim.sales &lt;- trim.sales[trim.sales$present.use == 2 |
-                           trim.sales$present.use == 29, ]
-  
-
-  # Write out
+  clean.sales$res.record &lt;- ifelse(is.na(clean.sales$res.record), 0, clean.sales$res.record)</code></pre>
+<p>We remove those that do not.</p>
+<pre class="r"><code>  clean.sales &lt;- clean.sales[clean.sales$res.record == 1, ]</code></pre>
+<p>Next, we add the land use designation (<em>present.use</em>) to the sales data.</p>
+<pre class="r"><code>  clean.sales$present.use &lt;- parcel.data$PresentUse[match(clean.sales$pinx,
+                                                  parcel.data$pinx)]</code></pre>
+<p>We then remove those observation that are not single family detached or townhome dwellings (essentially eliminating duplexes, triplexes, etc. )</p>
+<pre class="r"><code>  clean.sales &lt;- clean.sales[clean.sales$present.use == 2 |
+                           clean.sales$present.use == 29, ]</code></pre>
+<p>We save this intermitten set of sales to the database, deleting the table if it already exists.</p>
+<pre class="r"><code>  # Check if existing
   tExists &lt;- dbExistsTable(sales.conn, 'labeledSales')
   
+  # If existing, remove
   if(tExists) {
     dbRemoveTable(sales.conn, 'labeledSales')
   }
   
-  dbWriteTable(sales.conn, 'labeledSales', trim.sales, row.names=FALSE)
-  
-  # Clean up
-  for(delX in c('parcel.data','resbldg.data')){
-    rm(list=ls(pattern=glob2rx(paste0(delX,&quot;*&quot;))))
-  }
-  gc()  
- 
-### Integrate Sales data with assessor data ----------------------------------------------  
-  
- ## Read in full data  
-  
-  # Parcel Data
-  parcel.data &lt;- buildPinx(dbReadTable(sales.conn, 'parcel'))
- 
-  # Res Building data
-  resbldg.data &lt;- buildPinx(dbReadTable(sales.conn, 'resbldg'))
-  
- ## Clean up assessor data
-  
-  # Limit columns in parcel data
+  # Write table
+  dbWriteTable(sales.conn, 'labeledSales', clean.sales, row.names=FALSE)</code></pre>
+<p>Before joining the parcel and residential building data to the sales, we trim down the fields to those we are likely to use in our final analysis.</p>
+<pre class="r"><code>  # Limit columns in parcel data
   
   parcel.data &lt;- parcel.data[,c('pinx', 'Area', 'SubArea', 'CurrentZoning',
                                 'HBUAsIfVacant', 'PresentUse', 'SqFtLot', 
@@ -434,31 +419,33 @@ $(document).ready(function () {
                                   'SqFtGarageBasement', 'SqFtGarageAttached',
                                   'SqFtDeck', 'Bedrooms', 'BathHalfCount', 
                                   'Bath3qtrCount', 'BathFullCount', 'YrBuilt',
-                                  'YrRenovated', 'Condition')]
+                                  'YrRenovated', 'Condition')]</code></pre>
+<p>To ensure that no multiple dwelling properties (two homes, one lot) are included in our analysis, we eliminate all residential dwelling records that have more than one structure on the property</p>
+<pre class="r"><code>  # Order by building number
+  resbldg.data &lt;- resbldg.data[order(resbldg.data$BldgNbr), ]
   
-  resbldg.data &lt;- resbldg.data[resbldg.data$BldgNbr == 1, ]
+  # Remove duplicates
   resbldg.data &lt;- resbldg.data[!duplicated(resbldg.data$pinx), ]
-
- ## Integrate
   
-  # Add parcel data to sales
-  trim.sales &lt;- merge(trim.sales, parcel.data, by='pinx')
+  # Remove any oddities with building &gt; 2 as the first building 
+  resbldg.data &lt;- resbldg.data[resbldg.data$BldgNbr == 1, ]</code></pre>
+<p>We then append both the parcel and then the residential building data to the sales observations. The joining process represents an inner join, such that only observations the match from both datasets are maintained in the joined data.</p>
+<pre class="r"><code>  # Add parcel data to sales
+  clean.sales &lt;- merge(clean.sales, parcel.data, by='pinx')
  
   # Add res bldg data to sales
-  trim.sales &lt;- merge(trim.sales, resbldg.data, by='pinx')
- 
-### Integrate the geospatial data (parcel and beat) with the sales -----------------------  
-  
- ## Convert the parcel file to centroids
-
-  # Load in parcel file
-  parcels &lt;- st_read(file.path(data.dir, 'geographic/parcel/parcel.shp'),
-                     quiet=TRUE)
-  
-  # Tranform to appropriate CRS
-  parcels &lt;- st_transform(parcels, 4326)
-  
-  # Extract centroid Lat longs
+  clean.sales &lt;- merge(clean.sales, resbldg.data, by='pinx')</code></pre>
+</div>
+<div id="integrating-location-data" class="section level3">
+<h3>Integrating Location Data</h3>
+<p>In order to determine the absolute location of our observation as well as to assign Police Beat idenftification we need to add location data to our sales observations. We do this in two steps. First we add latitude and longitude values from the King County GIS parcel shapefile. Then we overlay the Seattle City Police Beat information on these points and assign each sale to a Beat.</p>
+<p>We start by reading in the parcel polygon file that we downloaded and unzipped in Chapter 4.</p>
+<pre class="r"><code>  parcels &lt;- st_read(file.path(data.dir, 'geographic/parcel/parcel.shp'),
+                     quiet=TRUE)</code></pre>
+<p>As this file is initially in a UTM coordinate reference systems (CRS) and does not have standard latitude and longitude values we convert it to an EPSG 4326 CRS.</p>
+<pre class="r"><code>  parcels &lt;- st_transform(parcels, 4326)</code></pre>
+<p>Next, the parcel file contains polygon geometry. For the purposes of this study we need point data, so we convert the parcels to points by taking the centroid value of each parcel. We then extract these into longitude and latitude values and combine them into a data frame that has the parcel identification number (converted to <em>pinx</em>) as the longitude and latitude of every parcel in the county (<strong>parcel.xy</strong>).</p>
+<pre class="r"><code>  # Extract centroid Lat longs
   parcel.centroids &lt;- st_centroid(parcels)
   longs &lt;- unlist(lapply(parcel.centroids, function(x) x[1]))
   lats &lt;- unlist(lapply(parcel.centroids, function(x) x[2]))
@@ -466,12 +453,11 @@ $(document).ready(function () {
   # Build a new data.frame
   parcel.xy &lt;- data.frame(pinx=paste0('..', parcels$PIN),
                           longitude=longs,
-                          latitude=lats)
-  
-  # Limit to those parcels in the sale dataset
-  parcel.xy &lt;- parcel.xy[parcel.xy$pinx %in% trim.sales$pinx, ]
-
-  # Conver to a spdf
+                          latitude=lats)</code></pre>
+<p>We then limit this dataset to only those properties that are also located in the sales dataset.</p>
+<pre class="r"><code>  parcel.xy &lt;- parcel.xy[parcel.xy$pinx %in% clean.sales$pinx, ]</code></pre>
+<p>Next we convert this aspatial data to a spatially explicit, <em>simple feature</em> object class in R. To do so, we first convert it to a standard Spatial Points Data Frame, then convert to Simple Features and then change the CRS to EPSG 4326 so that the spatial coordinates are in standard latitude and longitude.</p>
+<pre class="r"><code>  # Convert to a spdf
   parcel.sp &lt;- SpatialPointsDataFrame(coords=cbind(parcel.xy$longitude,
                                                    parcel.xy$latitude),
                                       data=parcel.xy, 
@@ -481,23 +467,19 @@ $(document).ready(function () {
   parcel.sf &lt;- st_as_sf(parcel.sp)
   
   # Convert the CRS to lat/long
-  parcel.sf &lt;- transform(parcel.sf, 4326)
-      
- ## Prepare the Police Beats file
-
- # Read in the Police Beats Data
+  parcel.sf &lt;- transform(parcel.sf, 4326)</code></pre>
+<p>We now shift to preparing the Seattle Police Beats spatial data.</p>
+<p>We start by reading in the Beats polygon shapefile that we downloaded and unzipped in Chapter 4. We also convert this to have an EPSG 4326 CRS.</p>
+<pre class="r"><code> # Read in the Police Beats Data
   beats &lt;- st_read(file.path(data.dir, 'beats/SPD_BEATS_WGS84.shp'),
                    quiet=TRUE)
 
  # Transform the Coordinate Reference System  
-  beats &lt;- st_transform(beats, 4326)
-  
- # Remove the beats in the water precincts  
-  beats &lt;- beats[beats$first_prec != '', ]
-  
-## Add the Beat Identification to the sales
-  
-  # Set null values
+  beats &lt;- st_transform(beats, 4326)</code></pre>
+<p>A few of the polygons in the Beat shapefile are filler areas out over the water. We remove these.</p>
+<pre class="r"><code>  beats &lt;- beats[beats$first_prec != '', ]</code></pre>
+<p>Next, we overlay the Beat information onto the parcel point data. This is a three step process. First we add a new varialbe to the parcel points and set it to ‘NONE’. We then perform an intersect function which gives us a list of which parcels are in which beats. Finally, we loop through each beat and assign the beat name to the parcel which fall in its jurisdiction.</p>
+<pre class="r"><code>  # Set null values
   parcel.sf$beat &lt;- 'NONE'
   
   # Peform intersection
@@ -507,27 +489,26 @@ $(document).ready(function () {
   for(i in 1:length(beats.overlay)){
    ov.id &lt;- beats.overlay[[i]]
    parcel.sf$beat[ov.id] &lt;- as.character(beats$beat[i])
-  }
-  
-  # Remove sales not in Beat Precincts
-  parcel.sf &lt;- parcel.sf[parcel.sf$beat != &quot;NONE&quot;, ]  
-
- ## Add location data to sales  
-  
-  # Join data
-  final.sales &lt;- merge(trim.sales, 
+  }</code></pre>
+<p>Parcels that fall outside of the Beat area (outside of the City of Seattle) are then removed.</p>
+<pre class="r"><code>  parcel.sf &lt;- parcel.sf[parcel.sf$beat != &quot;NONE&quot;, ]  </code></pre>
+<p>The parcel information – complete with latitude, longitude and Beat name – is added to the sales information. Sales that do not match a parcel within the Beat area are dropped.</p>
+<pre class="r"><code>  final.sales &lt;- merge(clean.sales, 
                        parcel.sf[ , c('pinx', 'beat', 'longitude', 'latitude')],
-                       by='pinx')
-    
-  # Write out
+                       by='pinx')</code></pre>
+<p>Finally, we write this data out to the database under the name ‘finalsales’. When we are finished writing the data we close the connection to the database.</p>
+<pre class="r"><code>  # Test if already present
   tExists &lt;- dbExistsTable(sales.conn, 'finalSales')
   
+  # Remove if present
   if(tExists) {
     dbRemoveTable(sales.conn, 'finalSales')
   }
-  dbWriteTable(sales.conn, 'finalSales', trim.sales, row.names=FALSE)
 
-  # Close
+  # Write out
+  dbWriteTable(sales.conn, 'finalSales', final.sales, row.names=FALSE)
+
+  # Close Database connection
   dbDisconnect(sales.conn)</code></pre>
 </div>
 </div>

@@ -16,7 +16,7 @@ Note that RStudio is not necessary but it a helpful interactive development envi
 
 Once you have downloaded and installed both, you should open RStudio and see a screen like this:    
 
-![](images/rstudiostart.jpg)
+<!-- ![](images/rstudiostart.jpg) -->
 
 Once you have opened this can you move on to the code from the individual chapters. Do note that in many cases, code from one chapter depends on code and analyses performed in a previous chapter.  You should also set aside a directory on your computer where you can save the raw and intermediate data as well as the outputs from the graphing and modeling exercises.  You will need to manually input this directory into the code starting in chapter 4.     
 
@@ -221,8 +221,13 @@ Next, the user must enter the directory where the data is stored, **data.dir** (
 
 ```
 
+We load in a set of custom functions that have been developed to help with the data integration and cleaning process. 
 
+```{r eval=FALSE}
 
+ source(paste0(code.dir, 'custom_functions.R'))
+
+```
 
 We also create a name and path for the database into which we'll integrate all of the data. 
 
@@ -232,36 +237,12 @@ We also create a name and path for the database into which we'll integrate all o
 
 ```
 
-There a number of parameters that must be set to define the integration and cleaning process. They are as follows:
+#### Integrate Assessors data
 
-1. **sale.years**: The time range of sales to consider
-2. **data.year**: The year from which to use the parcel and assessor data
-3. **trans.limit**: The max number of transactions allowed per property in the time period (eliminates flips and other non-arms length situations)
-4. **trim.list**: A list of fields and associated codes that are not considered to be valid sales transactions.  The details of these are explained more below.  
-5. **over.write**: Whether or not to overwrite existing files in the database.  
-
-Users are cautioned not to change these parameter unless they have appropriately downloaded different assessor or geographic files, and/or wish to change the scope of the sales considered.  
+To better manage the various assessor's data files -- the sales, parcel and residential building information -- we combine them into a single SQLite database.  This also allows for more portability of the files.  This same database will contain the various iterations of the cleaned sales data as well.  The **convertCSVtoSQLite()** function is a custom function that we have developed for the task of combining various CSV files into a single SQLite database. If you don't want to see the progress of the process you can change the *verbose* parameter to FALSE. 
 
 ```{r eval=FALSE}
-
- ## Set cleaning parameters
  
-  sale.years <- c(2011, 2016)  
-  data.year <- 2016
-  trans.limit <- 5                
-  trim.list <- list(SaleReason=2:19,  
-                    SaleInstrument=c(0, 1, 4:28),
-                    SaleWarning=paste0(" ", c(1:2, 5:9, 11:14, 18:23, 25, 27,
-                                              31:33, 37, 39, 43, 46, 48, 49,
-                                              50:53, 59, 61, 63, 64, 66), " "))
-  over.write <- TRUE                 
-  
- ## Load custom source files
- 
- source(paste0(code.dir, 'custom_functions.R'))
- 
-### Integrate assessor data into single db file ------------------------------------------
-
  ## Convert CSVs to SQLite
   
   if(!file.exists(sales.db)){
@@ -279,64 +260,159 @@ Users are cautioned not to change these parameter unless they have appropriately
                      verbose=TRUE,
                      writeRowNames=FALSE)
   }
-  
-### Initial clean of sales to eliminate non-relevant observations ------------------------ 
- 
-  # Read in Sales File
+
+```
+
+#### Initial Clean of the Sale Transactions
+
+In this section we make a first pass through the sales transactions and eliminate sales that are obvious non-arms length transactions.  
+
+We start by opening a connection to the SQL database that we created above and reading in the raw sales information.
+
+```{r eval=FALSE}
+
   sales.conn <- dbConnect(dbDriver('SQLite'), sales.db)
   raw.sales <- dbReadTable(sales.conn, 'AllSales')
-  
-  # Base clean
+
+```
+
+We then remove all sales that are missing one of the two necessary components of the Parcel Identification Number (PIN), the key that is used to link sale records to information about the property characteristics found in the other data files. We save this filtered set of sales into a new object names **clean.sales**. 
+
+```{r eval=FALSE}
+    
   clean.sales <- raw.sales[raw.sales$Major > 0, ]
+
+```
+
+We then remove observations that have a sales price of \$0. 
+
+```{r eval=FALSE}
+
   clean.sales <- clean.sales[clean.sales$SalePrice > 0, ]
   
-  # Build sales data
+```
+
+The date field in the raw data is not in a standardized format that is interpretable by the R language.  Here we deconstruct the existing date format and build it back into one that R can recognize. We then create a variable containing the new sales date (**salesDate**) and the new sales year (**salesYear**).  We also then remove those observations that are missing a sale date. 
+
+```{r eval=FALSE}
+
+  # Build sales date
   clean.sales$docDate <- paste(substr(clean.sales$DocumentDate, 4, 5)
                               ,substr(clean.sales$DocumentDate, 1, 2),
                               substr(clean.sales$DocumentDate, 7, 10), sep="")
+  
+  # Create new date and year variables
   clean.sales$salesDate <- as.POSIXct(strptime(clean.sales$docDate, "%d%m%Y"))
   clean.sales$salesYear <- as.numeric(format(clean.sales$salesDate, "%Y"))
+  
+  # Remove those missing the date
   clean.sales <- clean.sales[!is.na(clean.sales$salesDate), ]
   
-  # Eliminate Transactions prior to Sales Year Limit
-  clean.sales <- clean.sales[clean.sales$salesYear >= sale.years[1] & 
-                             clean.sales$salesYear <= sale.years[2], ]
+```
+
+Our study is limited to the 2011 to 2016 time period.  Below we eliminate sales outside of this range. 
   
-  # Add PINX
+```{r eval=FALSE}
+  
+  clean.sales <- clean.sales[clean.sales$salesYear >= 2011 & 
+                             clean.sales$salesYear <= 2016, ]
+
+```
+
+The existing parcel identification numbers often contain leading zeroes.  While this naming convention is usually handled properly in R, it can cause problems when exporting to other format such as CSV or when using the data in software such as Excel.  To remedy this we convert the PINs into character fields and place two "." in front of the number to ensure that regardless of the software package used the value will be treated as text and not a number.  We call this new field **pinx** and have created a custom function, **buildPinx()** to accomplish this. 
+
+```{r eval=FALSE}
+  
   clean.sales <- buildPinx(clean.sales)
+
+```
+
+A very small set of transactions show unusually high volumes, trading many times per year.  As it is likely that these do not represent arm's length transactions we remove any properties that have transacted five or more times during the five year study period.  A custom function, **buildTransCount** accomplished ths. 
+
+```{r eval=FALSE}
   
-  # Add trans count and limit by paramter
-  clean.sales <- buildTransCount(clean.sales, transLimit=trans.limit)
+  clean.sales <- buildTransCount(clean.sales, transLimit=5)
+
+```
+
+Another small set of transactions involve the sale of multiple properties.  As this makes it difficult to divide up the proper price to each home, we eliminate these properties from consideration.  We employ a two-step process to do so.  First we create a new field called *multiParcel* by using a custom function, **idDup** that identifies and lables duplicate values. We then remove those observations that involve multiple parcel sales. 
+
+```{r eval=FALSE}
   
   # Add MultiParcel sale designation
   clean.sales <- idDup(clean.sales, 'ExciseTaxNbr', newField = 'multiParcel',
                       iddType='labelNonUnique', binNonUq=TRUE)
+
+  # Remove those with multiparcel
+  clean.sales <- clean.sales[clean.sales$multiParcel == 0, ]
+
+```
+
+Having removed instances of multiple parcel sales, we now add a unique identifier to each sale observation using the **buildSaleUIDs()** custom function. 
+
+```{r eval=FALSE}
   
-  # Add unique IDs
-  trim.sales <- buildSaleUIDs(clean.sales)
+  clean.sales <- buildSaleUIDs(clean.sales)
+
+```
+
+There are three field that contain labels from the King County Assessor office as to the appropriate-ness of the sale for use in valuation or price modeling.  These are:
+
+1. SaleReason: The listed reason for the sale
+2. SaleInstrument: The type of transfer deed used in the sale
+3. SaleWarning: A large set of warning flags that are applied to sales
+
+More information on each of these can be found by examining the King County Assessors lookup table, available at: http:/aqua.kingcounty.gov/extranet/assessor/Lookup.zip
+
+We clean the sales based on these three labeled fields using a three step process.  First we add blank spaces to both sides of the text field in the *SaleWarning* column to facilitate appropriate search processes.  Next, we create a list of the codes or lables which should be removed from each field.  Finally, we trim each field down based on these codes or labels using the **trimByField** custom function.
+
+```{r eval=FALSE}
   
-  # Trim sales by Insturment, reason and warning
   # Fix the "Warning" Field.  Add a leading/trailing space for the grep()
-  trim.sales$SaleWarning <- paste(" ", trim.sales$SaleWarning, " ", sep="")
+  clean.sales$SaleWarning <- paste(" ", clean.sales$SaleWarning, " ", sep="")
   
+  # Compile a list of invalid codes or labels
+  trim.list <- list(SaleReason=2:19,  
+                    SaleInstrument=c(0, 1, 4:28),
+                    SaleWarning=paste0(" ", c(1:2, 5:9, 11:14, 18:23, 25, 27,
+                                              31:33, 37, 39, 43, 46, 48, 49,
+                                              50:53, 59, 61, 63, 64, 66), " "))
+  
+  # Trim observations with invalid codes or labels
   for(tL in 1:length(trim.list)){
-    trim.sales <- trimByField(trim.sales, names(trim.list)[tL],
+    clean.sales <- trimByField(clean.sales, names(trim.list)[tL],
                              trimList = unlist(trim.list[tL]))
   }
+
+```
+
+We finish this step of data cleaning by writing the remaining sales observations back to the database under the name **trimmedSales**.  To do so, we check if this table already exists, if so we delete the existing table in the database and then we write this table to the database.  
+
+```{r eval=FALSE}
   
   # Write out
   tExists <- dbExistsTable(sales.conn, 'trimmedSales')
   
-  if(over.write & tExists) {
+  if(tExists) {
     dbRemoveTable(sales.conn, 'trimmedSales')
   }
-  dbWriteTable(sales.conn, 'trimmedSales', trim.sales, row.names=FALSE)
-  
+  dbWriteTable(sales.conn, 'trimmedSales', clean.sales, row.names=FALSE)
+
+```
+
+
+
+
+
+```{r eval=FALSE}
+
+
 ### Label Sales by Recond and use --------------------------------------------------------
   
   # Read in Data
   readData(dbName=sales.db,
-           data.year)
+           dataYear=2016,
+           verbose=TRUE)
     
   # Add Present Uses
   trim.sales$present.use <- parcel.data$PresentUse[match(trim.sales$pinx,
@@ -355,13 +431,11 @@ Users are cautioned not to change these parameter unless they have appropriately
   trim.sales <- trim.sales[trim.sales$present.use == 2 |
                            trim.sales$present.use == 29, ]
   
-  # Remove those with multiparcel
-  trim.sales <- trim.sales[trim.sales$multiParcel == 0, ]
 
   # Write out
   tExists <- dbExistsTable(sales.conn, 'labeledSales')
   
-  if(over.write & tExists) {
+  if(tExists) {
     dbRemoveTable(sales.conn, 'labeledSales')
   }
   
@@ -385,7 +459,27 @@ Users are cautioned not to change these parameter unless they have appropriately
   
  ## Clean up assessor data
   
-  ### TO DO:  Add column filtering here
+  # Limit columns in parcel data
+  
+  parcel.data <- parcel.data[,c('pinx', 'Area', 'SubArea', 'CurrentZoning',
+                                'HBUAsIfVacant', 'PresentUse', 'SqFtLot', 
+                                'Topography', 'RestrictiveSzShape', 
+                                'MtRainier', 'Olympics', 'Cascades', 
+                                'Territorial', 'SeattleSkyline', 'PugetSound',
+                                'LakeWashington', 'LakeSammamish', 
+                                'SmallLakeRiverCreek', 'OtherView',
+                                'WfntLocation', 'WfntFootage', 'WfntBank',
+                                'TrafficNoise', 'Contamination')]
+ 
+  # Limit Columns in Res Bldg 
+ 
+  resbldg.data <- resbldg.data[,c('pinx', 'BldgNbr', 'NbrLivingUnits',
+                                  'Stories', 'BldgGrade', 'SqFtTotLiving',
+                                  'SqFtTotBasement', 'SqFtFinBasement',
+                                  'SqFtGarageBasement', 'SqFtGarageAttached',
+                                  'SqFtDeck', 'Bedrooms', 'BathHalfCount', 
+                                  'Bath3qtrCount', 'BathFullCount', 'YrBuilt',
+                                  'YrRenovated', 'Condition')]
   
   resbldg.data <- resbldg.data[resbldg.data$BldgNbr == 1, ]
   resbldg.data <- resbldg.data[!duplicated(resbldg.data$pinx), ]
@@ -403,7 +497,7 @@ Users are cautioned not to change these parameter unless they have appropriately
  ## Convert the parcel file to centroids
 
   # Load in parcel file
-  parcels <- st_read(file.path(data.dir, 'geographic/parcel_address/parcel_address.shp'),
+  parcels <- st_read(file.path(data.dir, 'geographic/parcel/parcel.shp'),
                      quiet=TRUE)
   
   # Tranform to appropriate CRS
@@ -420,7 +514,7 @@ Users are cautioned not to change these parameter unless they have appropriately
                           latitude=lats)
   
   # Limit to those parcels in the sale dataset
-  parcel.xy <- parcel.xy[parcel.xy$pinx %in% trim.salesx$pinx, ]
+  parcel.xy <- parcel.xy[parcel.xy$pinx %in% trim.sales$pinx, ]
 
   # Conver to a spdf
   parcel.sp <- SpatialPointsDataFrame(coords=cbind(parcel.xy$longitude,
@@ -473,16 +567,13 @@ Users are cautioned not to change these parameter unless they have appropriately
   # Write out
   tExists <- dbExistsTable(sales.conn, 'finalSales')
   
-  if(over.write & tExists) {
+  if(tExists) {
     dbRemoveTable(sales.conn, 'finalSales')
   }
   dbWriteTable(sales.conn, 'finalSales', trim.sales, row.names=FALSE)
 
   # Close
   dbDisconnect(sales.conn)
-
-  
-
 
 
 

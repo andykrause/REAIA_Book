@@ -151,7 +151,7 @@ leadZeroBuilder <- function(x)
 ### Create a count of the number of times a various property has been sold ---------------
 
 buildTransCount <- function(xSales,                    # Sales dataFrame
-                            transLimit                 # Maximum allowed
+                            trans.limit                 # Maximum allowed
                             ){
   
   # Compute trans number
@@ -163,10 +163,10 @@ buildTransCount <- function(xSales,                    # Sales dataFrame
   
   # Order Properly and remove those with too many transactions
   xSales <- xSales[order(xSales$pinx, 
-                         xSales$salesYear,
+                         xSales$sales.year,
                          xSales$ExciseTaxNbr), ]  
   
-  xSales <- xSales[xSales$tnTotal < transLimit, ]
+  xSales <- xSales[xSales$tnTotal < trans.limit, ]
   
   # Assign a transNumber
   xSales$transNbr <- 1
@@ -182,30 +182,30 @@ buildTransCount <- function(xSales,                    # Sales dataFrame
 
 ### Offer options on how to handle duplicates in a given field ---------------------------
 
-idDup <- function(xData, 
-                  field, 
-                  newField='newField', 
-                  iddType='toRemove',
-                  binNonUq=FALSE){
+idDup <- function(x.data, 
+                  x.field, 
+                  new.field='new.field', 
+                  idd.type='toRemove',
+                  bin.nonuq=FALSE){
   
-  if(iddType == 'toRemove'){
-    xData <- xData[!duplicated(xData[field]), ]
+  if(idd.type == 'toRemove'){
+    x.data <- x.data[!duplicated(x.data[x.field]), ]
   }
-  if(iddType == 'labelDup'){
-    xData[ ,ncol(xData) + 1] <- duplicated(xData[field])
-    colnames(xData)[ncol(xData)] <- newField   
+  if(idd.type == 'labelDup'){
+    x.data[ ,ncol(x.data) + 1] <- duplicated(x.data[x.field])
+    colnames(x.data)[ncol(x.data)] <- new.field   
   }
-  if(iddType == 'labelNonUnique'){
-    cntTable <- as.data.frame(table(xData[field]))
-    xData[ ,ncol(xData) + 1] <- cntTable$Freq[match(xData[, field],
+  if(idd.type == 'labelNonUnique'){
+    cntTable <- as.data.frame(table(x.data[x.field]))
+    x.data[ ,ncol(x.data) + 1] <- cntTable$Freq[match(x.data[, x.field],
                                                     cntTable$Var1)]
-    colnames(xData)[ncol(xData)] <- newField   
-    if(binNonUq){
-      xData[ ,ncol(xData)] <- ifelse(xData[ ,ncol(xData)] > 1, 1, 0)  
+    colnames(x.data)[ncol(x.data)] <- new.field   
+    if(bin.nonuq){
+      x.data[ ,ncol(x.data)] <- ifelse(x.data[ ,ncol(x.data)] > 1, 1, 0)  
     }
   }
   
-  return(xData)
+  return(x.data)
 }
 
 ### Function that adds Unique IDs for sales ----------------------------------------
@@ -214,15 +214,15 @@ buildSaleUIDs <- function(xSales                       # Sales dataframes
                               ){
   
   # Add Unique IDs for each Record and Each Sales
-  years <- rownames(table(xSales$salesYear))
-  xSales$RecID <- ' '
-  xSales$SaleID <- ' '
+  years <- rownames(table(xSales$sales.year))
+  xSales$rec.ID <- ' '
+  xSales$sale.ID <- ' '
   
   # Loop through the years
   for(i in 1:length(years)){
-    idX <- which(xSales$salesYear == as.numeric(years[i]))
-    xSales$RecID[idX] <- paste0(years[i], '..', 1:length(idX))
-    xSales$SaleID[idX] <- paste0(years[i], '..', 
+    idX <- which(xSales$sales.year == as.numeric(years[i]))
+    xSales$rec.ID[idX] <- paste0(years[i], '..', 1:length(idX))
+    xSales$sale.ID[idX] <- paste0(years[i], '..', 
                                  as.numeric(as.factor(xSales$ExciseTaxNbr[idX])))
   }
   
@@ -234,36 +234,36 @@ buildSaleUIDs <- function(xSales                       # Sales dataframes
 
 ### Function to trim a dataset based on a field with multiple values ---------------------
 
-trimByField <- function(xData,
-                        field, 
-                        trimList, 
+trimByField <- function(x.data,
+                        x.field, 
+                        trim.list, 
                         inclusive=FALSE){
   
   # Identify those in list
   
   if(!inclusive){
-    xData$valid <- 1
+    x.data$valid <- 1
     
-    for(i in 1:length(trimList)){
-      xData$valid <- ifelse(xData[field] == trimList[i], 0 , xData$valid)
+    for(i in 1:length(trim.list)){
+      x.data$valid <- ifelse(x.data[x.field] == trim.list[i], 0 , x.data$valid)
     }
   } else {
-    xData$valid <- 0
+    x.data$valid <- 0
     
-    for(i in 1:length(trimList)){
-      xData$valid <- ifelse(xData[field] == trimList[i], 1 , xData$valid)
+    for(i in 1:length(trim.list)){
+      x.data$valid <- ifelse(x.data[x.field] == trim.list[i], 1 , x.data$valid)
     }
     
   }
   
   # Trim data
   
-  xData <- xData[xData$valid == 1, ]
-  xData$valid <- NULL
+  x.data <- x.data[x.data$valid == 1, ]
+  x.data$valid <- NULL
   
   # Return data
   
-  return(xData)
+  return(x.data)
 }
 
 ### Function to read in king data for a given year ---------------------------------------
@@ -391,7 +391,7 @@ sourceHttps <- function(u,                          # Name of location (raw Gith
 #   
 #   # add MultiParcel sale designation
 #   if(verbose) cat('Labeling Multiple parcel sales\n')
-#   cleanSales <- idDup(cleanSales, 'ExciseTaxNbr', newField = 'multiParcel',
+#   cleanSales <- idDup(cleanSales, 'ExciseTaxNbr', new.field = 'multiParcel',
 #                       iddType='labelNonUnique', binNonUq=TRUE)
 #   
 #   # Add unique IDs

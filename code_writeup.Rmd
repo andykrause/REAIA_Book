@@ -670,24 +670,13 @@ Finally, we write this data out to the database under the name 'finalsales'. Whe
 
 ## Chapter 8
 
-Code for making EDA Plots
-
 ## Chapter 9
-
-Code for making outlier ID plots
 
 ## Chapter 10
 
-Price modeling code
-
 ## Chapter 11
 
-Nick's code
-
 ## Chapter 12
-
-Nick's code
-
 
 ## Chapter 13
 

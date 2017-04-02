@@ -10,6 +10,7 @@
   library(RSQLite)
   library(RODBC)
   
+  
  ## Set data and code directory
  
   #data.dir <- 'c:/dropbox/research/bigdatabook/data/'
@@ -223,6 +224,9 @@
  # Filter: Remove water precincts  
   beats <- dplyr::filter(beats, first_prec != '')
   
+ # Save beats
+  save(beats, file=file.path(data.dir, 'geographic/beats.Rdata'))
+  
 ## Integrate the Beat Identification to the sales
   
   # Transform:  Set up null field
@@ -247,6 +251,11 @@
   # Transform: Create Separate Lat/long Columns 
   parcel.centroids$longitude <- unlist(lapply(parcel.centroids$centroid, function(x) x[1]))
   parcel.centroids$latitude <- unlist(lapply(parcel.centroids$centroid, function(x) x[2]))
+  
+  # Save Data
+  save(parcel.centroids, 
+       file= file.path(data.dir, 'geographic/parcelcentroids_sales.Rdata'))
+  
   
   # Integrate: Join data
   sales.data <- merge(sales.data, 

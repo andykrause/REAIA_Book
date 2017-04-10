@@ -1,15 +1,18 @@
+##########################################################################################
+#                                                                                        #            
+#  Code for Chapter 7 (Preparation) of Real Estate Analysis in the Information Age       #   
+#                                                                                        #                  
+##########################################################################################
 
 ### Preliminary Commands -----------------------------------------------------------------
 
  ## Load Libraries
 
   library(sf)
-  library(stringr)
   library(sp)
-  library(plyr)
+  library(tidyverse)
   library(RSQLite)
   library(RODBC)
-  
   
  ## Set data and code directory
  
@@ -34,31 +37,44 @@
  ## Transform and Filtering Activities for Sales (Interspersed) 
   
   # Filter those missing PIN numbers or Price
-  sales.data <- sales.data[sales.data$Major > 0, ]
-  sales.data <- sales.data[sales.data$SalePrice > 0, ]
+  sales.data <- dplyr::filter(sales.data, Major > 0)
+  sales.data <- dplyr::filter(sales.data, SalePrice > 0)
   
-  # Transform new date fields 
-  sales.data$doc.date <- paste(substr(sales.data$DocumentDate, 4, 5)
-                              ,substr(sales.data$DocumentDate, 1, 2),
-                              substr(sales.data$DocumentDate, 7, 10), sep="")
-  sales.data$sales.date <- as.POSIXct(strptime(sales.data$doc.date, "%d%m%Y"))
-  sales.data$sales.year <- as.numeric(format(sales.data$sales.date, "%Y"))
+  # Mutate new document date field
+  sales.data <- dplyr::mutate(.data=sales.data,
+                              doc.date = paste0(substr(DocumentDate, 4, 5),
+                                                 substr(DocumentDate, 1, 2),
+                                                 substr(DocumentDate, 7, 10)))
+  # Mutate new sale date field
+  sales.data <- dplyr::mutate(.data=sales.data,
+                              sales.date = as.POSIXct(strptime(doc.date, "%d%m%Y")))
+  
+  # Mutate new sales year field
+  sales.data <- dplyr::mutate(.data=sales.data,
+                              sales.year = as.numeric(format(sales.date, "%Y")))
+  
+  # Remove document date fields
+  sales.data <- dplyr::mutate(.data=sales.data,
+                              doc.date = NULL)
+  sales.data <- dplyr::mutate(.data=sales.data,
+                              DocumentDate = NULL)
   
   # Filter those missing a sales date
-  sales.data <- sales.data[!is.na(sales.data$sales.date), ]
-  
+  sales.data <- dplyr::filter(.data=sales.data,
+                              !is.na(sales.date))
   
   # Filter sales based on study relevancy (time period)
-  sales.data <- sales.data[sales.data$sales.year >= 2011 & 
-                             sales.data$sales.year <= 2016, ]
+  sales.data <- dplyr::filter(.data=sales.data,
+                              sales.year >= 2011 & sales.year <= 2016)
   
-  # Transform Major and Minor into a PIN identifier
-  sales.data <- buildPinx(sales.data)
+  # Mutate Major and Minor into a PIN identifier (custom function)
+  sales.data <- buildPinx(X=sales.data)
   
-  # Transform & Filter: Add trans count and limit by paramter
-  sales.data <- buildTransCount(sales.data, trans.limit=5)
+  # Mutate & Filter: Add trans count and limit by parameter (custom function)
+  sales.data <- buildTransCount(xSales=sales.data, 
+                                trans.limit=5)
   
-  # Transform: Add MultiParcel sale designation
+  # Mutate: Add MultiParcel sale designation (custom function)
   sales.data <- idDup(x.data=sales.data, 
                       x.field='ExciseTaxNbr', 
                       new.field = 'multi.parcel',
@@ -66,18 +82,19 @@
                       bin.nonuq=TRUE)
   
   # Filter those with multiparcel
-  sales.data <- sales.data[sales.data$multi.parcel == 0, ]
+  sales.data <- dplyr::filter(.data=sales.data,
+                              multi.parcel == 0)
   
-  # Add unique IDs
-  sales.data <- buildSaleUIDs(sales.data)
+  # Mutate a new sale id after filters (custom function)
+  sales.data <- buildSaleUIDs(sales.data) 
   
   # Filter by Sale Insturment, Reason and Warning
   
-  # Transform the "Warning" Field.  
+  # Mutate the "Warning" Field.  
   #Add a leading/trailing space for the grep()
   
-  sales.data$SaleWarning <- paste(" ", sales.data$SaleWarning, 
-                                  " ", sep="")
+  sales.data <- dplyr::mutate(sales.data,
+                              SaleWarning = paste0(" ", SaleWarning, " "))
 
   # Create a list of factors to eliminate  
   trim.list <- list(SaleReason=2:19,  
@@ -86,7 +103,7 @@
                                               31:33, 37, 39, 43, 46, 48, 49,
                                               50:53, 59, 61, 63, 64, 66), " "))
   
-  # Loop through each factor type and filter accordingly
+  # Loop through each factor type and filter accordingly (custom function)
   for(tL in 1:length(trim.list)){
     sales.data <- trimByField(x.data=sales.data, 
                               x.field=names(trim.list)[tL],
@@ -94,47 +111,56 @@
   }
   
   # Transform:  Limit field names
-  sales.fields <- c('pinx', 'rec.ID', 'sale.ID', 'SalePrice', 'doc.date',
-                    'sales.date', 'sales.year')
-  sales.data <- sales.data[ ,sales.fields]
-  names(sales.data)[names(sales.data)=='SalePrice'] <- 'sale.price'
-
+  sales.data <- dplyr::select(.data=sales.data, pinx, rec.ID, sale.ID, SalePrice, 
+                              sales.date, sales.year)
+  
+  
+  sales.data <- dplyr::rename(.data=sales.data, sale.price=SalePrice)
+  
 ### Integrate Sale Record and Use Type------------------------------------------------------
   
  ## Read in Data
   
   # Parcel Data
   parcel.data <- dbReadTable(sales.conn, 'parcel')
+  
+  # Mutate Pinx number
   parcel.data <- buildPinx(parcel.data)
   
   # Res Building data
   resbldg.data <- dbReadTable(sales.conn, 'resbldg')
+  
+  # Mutate pinx number
   resbldg.data <- buildPinx(resbldg.data)
   
   # Integrate the record type (Whether or not Residential) (Labeling)
   sales.data$res.record <- resbldg.data$BldgNbr[match(sales.data$pinx,
                                                       resbldg.data$pinx)]
   
-  # Transform the integrated field to binary
-  sales.data$res.record <- ifelse(is.na(sales.data$res.record), 0, 
+  # Mutate the integrated field to binary
+  sales.data$res.record <- ifelse(is.na(sales.data$res.record), 
+                                  0, 
                                   sales.data$res.record)
   
   # Filter those with non-residential record type or with more than one dwelling on it  
-  sales.data <- sales.data[sales.data$res.record == 1, ]
+  sales.data <- dplyr::filter(.data=sales.data,
+                              res.record == 1)
   
-  # Transform:  Remove Res.record field
-  sales.data$res.record <- NULL
+  # Mutate:  Remove Res.record field
+  sales.data <- dplyr::mutate(.data=sales.data, res.record = NULL)
+  
   
   # Integrate property use field
   sales.data$present.use <- parcel.data$PresentUse[match(sales.data$pinx,
                                                    parcel.data$pinx)]
   
   # Filter those with no present use
-  sales.data <- sales.data[!is.na(sales.data$present.use), ]
+  sales.data <- dplyr::filter(.data=sales.data,
+                              !is.na(present.use))
   
   # Filter those not with SFR or Townhome use category
-  sales.data <- sales.data[sales.data$present.use == 2 |
-                           sales.data$present.use == 29, ]
+  sales.data <- dplyr::filter(.data=sales.data,
+                              present.use == 2 | present.use == 29)
   
 ### Integrate Sales data with assessor data ----------------------------------------------  
 
@@ -183,17 +209,24 @@
   
   # Filter: remove multi-structure sites from resbldg
   
-  resbldg.data <- resbldg.data[order(resbldg.data$bldg.nbr), ]
-  resbldg.data <- resbldg.data[!duplicated(resbldg.data$pinx), ]
-  resbldg.data <- resbldg.data[resbldg.data$bldg.nbr == 1, ]
+  resbldg.data <- dplyr::arrange(.data=resbldg.data,
+                                bldg.nbr)
+  resbldg.data <- dplyr::filter(.data=resbldg.data,
+                                !duplicated(pinx))
+  resbldg.data <- dplyr::filter(.data=resbldg.data,
+                                bldg.nbr == 1)
   
  ## Integrate Assessor data and sales data
   
   # Join parcel data to sales (inner join)
-  sales.data <- merge(sales.data, parcel.data, by='pinx')
+  sales.data <- dplyr::inner_join(x=sales.data, 
+                                  y=parcel.data, 
+                                  by='pinx')
  
   # Join res bldg data to sales (inner join)
-  sales.data <- merge(sales.data, resbldg.data, by='pinx')
+  sales.data <- dplyr::inner_join(x=sales.data, 
+                                  y=resbldg.data, 
+                                  by='pinx')
  
 ### Integrate the geospatial data (parcel and beat) with the sales -----------------------  
   
@@ -202,16 +235,13 @@
   # Load Data
   load(file= file.path(data.dir, 'geographic/parcelcentroids.Rdata'))
   
-  # Transform:  Add pinx field for joining
+  # Mutate:  Add pinx field for joining
   parcel.centroids$pinx <- paste0('..', parcel.centroids$PIN)
   
-  # Transform: Remove unnecessary fields
+  # Remove unnecessary fields
   parcel.centroids$MAJOR <- NULL
   parcel.centroids$MINOR <- NULL
   parcel.centroids$PIN <- NULL
-  
-  # Transform:  Change CRS
-  parcel.centroids$centroid <- st_transform(parcel.centroids$centroid, 4326)
   
   # Filter: Limit to those parcels in the sale dataset
   parcel.centroids <- dplyr::filter(parcel.centroids, pinx %in% sales.data$pinx)
@@ -219,7 +249,7 @@
  ## Prepare the Police Beats file
 
  # Load Data
-  load(file= file.path(data.dir, 'geographic/beats.Rdata'))
+  load(file=file.path(data.dir, 'geographic/beats.Rdata'))
   
  # Filter: Remove water precincts  
   beats <- dplyr::filter(beats, first_prec != '')
@@ -249,8 +279,8 @@
  ## Add location data to sales  
   
   # Transform: Create Separate Lat/long Columns 
-  parcel.centroids$longitude <- unlist(lapply(parcel.centroids$centroid, function(x) x[1]))
-  parcel.centroids$latitude <- unlist(lapply(parcel.centroids$centroid, function(x) x[2]))
+  parcel.centroids$longitude <- unlist(lapply(parcel.centroids$geometry, function(x) x[1]))
+  parcel.centroids$latitude <- unlist(lapply(parcel.centroids$geometry, function(x) x[2]))
   
   # Save Data
   save(parcel.centroids, 
@@ -261,11 +291,13 @@
   sales.data <- merge(sales.data, 
                       parcel.centroids[ , c('pinx', 'beat', 'longitude', 'latitude')],
                       by='pinx')
-  
+  sales.data$geometry <- NULL
+    
   # Write to the database
   dbWriteTable(sales.conn, 'prepSales', sales.data, row.names=FALSE, overwrite=TRUE)
 
   # Close
   dbDisconnect(sales.conn)
 
-  
+##########################################################################################
+##########################################################################################

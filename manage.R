@@ -1,3 +1,8 @@
+##########################################################################################
+#                                                                                        #            
+#  Code for Chapter 5 (Manage) of Real Estate Analysis in the Information Age            #   
+#                                                                                        #                  
+##########################################################################################
 
 ### Preliminary Commands -----------------------------------------------------------------
 
@@ -5,14 +10,15 @@
 
   library(RSQLite)
   library(RODBC)
+  library(tidyverse)
   library(maptools)
   library(sf)
   library(sp)
 
  ## Set data and code directory
 
-  data.dir <- 'c:/temp/' #data.dir <- 'c:/dropbox/research/bigdatabook/data/'
-  code.dir <- 'c:/dropbox/research/bigdatabook/code/'
+  data.dir <- 'c:/temp/' 
+  code.dir <- 'c:/code/REAIA_Book/'
 
  ## Load custom source files
 
@@ -26,15 +32,15 @@
 
  ## Convert CSVs to SQLite
 
- if(!file.exists(sales.db)){
+ if (!file.exists(sales.db)){
   
    convertCSVtoSQLite(dataPathCurrent=file.path(data.dir, 'assessor'),
-                      dataPathNew = data.dir,
-                      newFileName = 'assessorData.db',
+                      dataPathNew=data.dir,
+                      newFileName='assessorData.db',
                       fileNames=c('EXTR_RPSale.csv',
                                   'EXTR_Parcel.csv',
                                   'EXTR_Resbldg.csv'),
-                      tableNames = c('Sales',
+                      tableNames=c('Sales',
                                      'Parcel',
                                      'ResBldg'),
                       overWrite=TRUE,
@@ -53,15 +59,41 @@
   # Read in data
 
   sales.data <- dbReadTable(sales.conn, 'Sales')
+
+  # Make new UID from ExciseTaxNbr
+  sales.data <- dplyr::mutate(sales.data, UID=ExciseTaxNbr)
   
-  # Make RecordingNbr the Unique ID
-  sales.data$RecID <- sales.data$RecordingNbr
+  # Place Excise Tax Number on far left
+  sales.data <- dplyr::select(sales.data, UID, everything())
+
+  # Order by that field
+  sales.data <- dplyr::arrange(sales.data, UID)
+
+  # Create fully unique field
   
-  # Place RecID first
-  s.names <- names(sales.data)
-  s.names <- s.names[!s.names %in% c('RecID', 'RecordingNbr')]
-  sales.data <- sales.data[ ,c('RecID', s.names)]
+  # Get a data.frame of those UID that are duplicated
+  uid.mult <- sales.data %>% 
+    dplyr::group_by(UID) %>%
+      dplyr::summarize(rec.count=n()) %>%
+       dplyr::filter(rec.count > 1)
   
+  # Develop a list full of proper suffixes
+  uid.suffix <- lapply(split(uid.mult, uid.mult$UID), 
+                       function(x) 1:(x$rec.count))
+  names(uid.suffix) <- NULL
+  
+  # Apply suffix to sales.data
+  sales.data$uid.suffix <- 0
+  sales.data$uid.suffix[sales.data$UID %in% uid.mult$UID] <- unlist(uid.suffix)
+  
+  # Concatenate to make an unique ID
+  sales.data$UID <- ifelse(sales.data$uid.suffix==0,
+                           sales.data$UID,
+                           paste0(sales.data$UID, '..', sales.data$uid.suffix))
+  
+  # Remove uid.suffix field
+  sales.data$uid.suffix <- NULL
+
   # Write out
   dbRemoveTable(sales.conn, 'Sales')
   dbWriteTable(sales.conn, 'Sales', sales.data, row.names=FALSE)
@@ -115,8 +147,10 @@
   
   # Extract centroid Lat longs
   parcel.centroids <- st_centroid(parcels)
-  parcel.centroids <- st_sf(parcels[ ,c(1:3)], parcel.centroids)
-  names(parcel.centroids)[4] <- 'centroid'
+  #parcel.centroids <- st_sf(parcels[ ,c(1:3)], parcel.centroids$geometry)
+  #names(parcel.centroids)[4] <- 'centroid'
+  parcel.centroids$Shape_area <- NULL
+  parcel.centroids$Shape_len <- NULL
   
   # Save as an R object for loading later
   save(parcel.centroids, file= file.path(data.dir, 'geographic/parcelcentroids.Rdata'))

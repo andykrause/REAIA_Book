@@ -71,7 +71,7 @@
   sales.data <- buildPinx(X=sales.data)
   
   # Mutate & Filter: Add trans count and limit by parameter (custom function)
-  sales.data <- buildTransCount(xSales=sales.data, 
+  sales.data <- buildTransCount(x.sales=sales.data, 
                                 trans.limit=5)
   
   # Mutate: Add MultiParcel sale designation (custom function)

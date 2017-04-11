@@ -1,6 +1,6 @@
 ##########################################################################################
 #                                                                                        #            
-#  Code for Chapter 5 (Manage) of Real Estate Analysis in the Information Age            #   
+#  Code for Chapter 6 (Manage) of Real Estate Analysis in the Information Age            #   
 #                                                                                        #                  
 ##########################################################################################
 
@@ -147,8 +147,6 @@
   
   # Extract centroid Lat longs
   parcel.centroids <- st_centroid(parcels)
-  #parcel.centroids <- st_sf(parcels[ ,c(1:3)], parcel.centroids$geometry)
-  #names(parcel.centroids)[4] <- 'centroid'
   parcel.centroids$Shape_area <- NULL
   parcel.centroids$Shape_len <- NULL
   

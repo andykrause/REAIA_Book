@@ -150,34 +150,34 @@ leadZeroBuilder <- function(x)
 
 ### Create a count of the number of times a various property has been sold ---------------
 
-buildTransCount <- function(xSales,                    # Sales dataFrame
+buildTransCount <- function(x.sales,                    # Sales dataFrame
                             trans.limit                 # Maximum allowed
                             ){
   
   # Compute trans number
-  pinxTable <- as.data.frame(table(xSales$pinx))
-  colnames(pinxTable) <- c("pinx", "tnTotal")
+  pinx.table <- as.data.frame(table(x.sales$pinx))
+  colnames(pinx.table) <- c("pinx", "tn.total")
   
   # Merge back to sales
-  xSales$tnTotal <- pinxTable$tnTotal[match(xSales$pinx, pinxTable$pinx)] 
+  x.sales$tn.total <- pinx.table$tn.total[match(x.sales$pinx, pinx.table$pinx)] 
   
   # Order Properly and remove those with too many transactions
-  xSales <- xSales[order(xSales$pinx, 
-                         xSales$sales.year,
-                         xSales$ExciseTaxNbr), ]  
+  x.sales <- x.sales[order(x.sales$pinx, 
+                          x.sales$sales.year,
+                          x.sales$ExciseTaxNbr), ]  
   
-  xSales <- xSales[xSales$tnTotal < trans.limit, ]
+  x.sales <- x.sales[x.sales$tn.total < trans.limit, ]
   
   # Assign a transNumber
-  xSales$transNbr <- 1
-  for(i in 2:max(xSales$tnTotal)){ 
-    idX <- which(xSales$tnTotal == i)
+  x.sales$trans.nbr <- 1
+  for(i in 2:max(x.sales$tn.total)){ 
+    idX <- which(x.sales$tn.total == i)
     idL <- length(idX) / i
     repNbrs <- rep(1:i, idL)
-    xSales$transNbr[idX] <- repNbrs
+    x.sales$trans.nbr[idX] <- repNbrs
   }
   
-  return(xSales)
+  return(x.sales)
 }
 
 ### Offer options on how to handle duplicates in a given field ---------------------------

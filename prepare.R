@@ -18,7 +18,7 @@
  
   #data.dir <- 'c:/dropbox/research/bigdatabook/data/'
   data.dir <- 'c:/temp/'
-  code.dir <- 'c:/dropbox/research/bigdatabook/code/'
+  code.dir <- 'c:/code/REAIA_book/'
   
  ## Load custom source files
   
@@ -47,7 +47,7 @@
                                                  substr(DocumentDate, 7, 10)))
   # Mutate new sale date field
   sales.data <- dplyr::mutate(.data=sales.data,
-                              sales.date = as.POSIXct(strptime(doc.date, "%d%m%Y")))
+                              sales.date = as.Date(doc.date, "%d%m%Y"))
   
   # Mutate new sales year field
   sales.data <- dplyr::mutate(.data=sales.data,
@@ -169,29 +169,27 @@
   # Parcel Data
   
   # Transform:  Remove unneccessary fields
-  parcel.data <- parcel.data[,c('pinx', 'Area', 'SubArea', 'CurrentZoning',
-                                'HBUAsIfVacant', 'SqFtLot', 
+  parcel.data <- parcel.data[,c('pinx', 'CurrentZoning', 'SqFtLot', 
                                 'Topography', 'RestrictiveSzShape', 
                                 'MtRainier', 'Olympics', 'Cascades', 
                                 'Territorial', 'SeattleSkyline', 'PugetSound',
                                 'LakeWashington', 'LakeSammamish', 
                                 'SmallLakeRiverCreek', 'OtherView',
                                 'WfntLocation', 'WfntFootage', 'WfntBank',
-                                'TrafficNoise', 'Contamination')]
+                                'TrafficNoise')]
   
   # Transform: Change field names
-  names(parcel.data) <- c('pinx', 'area', 'sub.area', 'zoning', 
-                          'hbu.vacant', 'lot.size', 'topo', 'restr.szshp',
+  names(parcel.data) <- c('pinx', 'zoning', 'lot.size', 'topo', 'restr.szshp',
                           'view.rainier', 'view.olympics', 'view.cascades',
                           'view.terr', 'view.city', 'view.puget', 
                           'view.lkwash', 'view.lksamm', 'view.smwater',
                           'view.other', 'wfnt', 'wfnt.ftg', 'wfnt.bank',
-                          'traffic.noise', 'contam')
+                          'traffic.noise')
   
   # Res Building Data
   
   # Transform: Remove unnecessary fields 
-  resbldg.data <- resbldg.data[,c('pinx', 'BldgNbr', 'NbrLivingUnits',
+  resbldg.data <- resbldg.data[,c('pinx', 'NbrLivingUnits', 'BldgNbr', 
                                   'Stories', 'BldgGrade', 'SqFtTotLiving',
                                   'SqFtFinBasement',
                                   'SqFtGarageBasement', 'SqFtGarageAttached',
@@ -201,7 +199,7 @@
                                   'YrRenovated', 'Condition')]
   
   # Transform: Change field names
-  names(resbldg.data) <- c('pinx', 'bldg.nbr', 'nbr.lu', 'stories',
+  names(resbldg.data) <- c('pinx', 'nbr.lu', 'bldg.nbr', 'stories',
                            'bldg.grade', 'tot.sf', 'bsmt.sf',
                            'gar.bsmt.sf', 'gar.att.sf', 'deck.sf',
                            'beds', 'bath.half', 'bath.75', 'bath.full',
@@ -216,6 +214,22 @@
   resbldg.data <- dplyr::filter(.data=resbldg.data,
                                 bldg.nbr == 1)
   
+  # Remove building number field
+  resbldg.data <- dplyr::mutate(.data=resbldg.data,
+                                 bldg.nbr = NULL)
+  
+  # Mutate: Create total bathrooms
+  resbldg.data <- dplyr::mutate(.data=resbldg.data,
+                                baths = bath.full + bath.75 * .75 + bath.half * .5)
+  
+  # Remove partial bath fields
+  resbldg.data <- dplyr::mutate(.data=resbldg.data,
+                                bath.full = NULL)
+  resbldg.data <- dplyr::mutate(.data=resbldg.data,
+                                bath.75 = NULL)
+  resbldg.data <- dplyr::mutate(.data=resbldg.data,
+                                bath.half = NULL)
+  
  ## Integrate Assessor data and sales data
   
   # Join parcel data to sales (inner join)
@@ -227,7 +241,48 @@
   sales.data <- dplyr::inner_join(x=sales.data, 
                                   y=resbldg.data, 
                                   by='pinx')
- 
+
+  # Mutate: Create Age variable
+  sales.data <- dplyr::mutate(.data=sales.data,
+                              age=sales.year - yr.built)
+  
+  # Filter: Remove those built after the sale
+  sales.data <- dplyr::filter(.data=sales.data,
+                              age >= 0)
+  
+  # Remove Yr.Built field
+  sales.data <- dplyr::mutate(.data=sales.data,
+                              yr.built=NULL)
+  
+  # Create years since renovation
+  sales.data <- dplyr::mutate(.data=sales.data,
+                              age.renov = sales.year - yr.ren)
+  
+  # Filter: Remove those renovated after the sale
+  sales.data <- dplyr::filter(.data=sales.data,
+                              age.renov >= 0)
+  
+  # Mutate: Create effective age field
+  sales.data$eff.age <- ifelse(sales.data$age.renov < sales.data$age,
+                               sales.data$age.renov,
+                               sales.data$age)
+
+  # Remove Age.renov field
+  sales.data <- dplyr::mutate(.data=sales.data,
+                              age.renov=NULL)
+  
+  # Remove Yr.Ren field
+  sales.data <- dplyr::mutate(.data=sales.data,
+                              yr.ren=NULL)
+  
+  # Filter: Remove those with more than one land use
+  sales.data <- dplyr::filter(.data=sales.data,
+                              nbr.lu == 1)
+  
+  # Remove Nbr.lu field
+  sales.data <- dplyr::mutate(.data=sales.data,
+                              nbr.lu=NULL)
+  
 ### Integrate the geospatial data (parcel and beat) with the sales -----------------------  
   
  ## Prepare Centroids Data  
@@ -292,7 +347,21 @@
                       parcel.centroids[ , c('pinx', 'beat', 'longitude', 'latitude')],
                       by='pinx')
   sales.data$geometry <- NULL
-    
+  
+  # Convert sales.date to character to write to database
+  sales.data <- dplyr::mutate(.data=sales.data,
+                              sales.date = as.character(sales.date))  
+  
+  # Transform:  Reclassify the zoning variable
+  sales.data$zoning[grep('LR1', sales.data$zoning)] <- 'LR1'
+  sales.data$zoning[grep('LR2', sales.data$zoning)] <- 'LR2'
+  sales.data$zoning[grep('LR3', sales.data$zoning)] <- 'LR3'
+  sales.data$zoning[grep('NC', sales.data$zoning)] <- 'Comm'
+  sales.data$zoning[grep('C1', sales.data$zoning)] <- 'Comm'
+  sales.data$zoning[grep('MR', sales.data$zoning)] <- 'Other'
+  sales.data$zoning[grep('RSL', sales.data$zoning)] <- 'Other'
+  sales.data$zoning[grep('NR', sales.data$zoning)] <- 'Other'
+  
   # Write to the database
   dbWriteTable(sales.conn, 'prepSales', sales.data, row.names=FALSE, overwrite=TRUE)
 

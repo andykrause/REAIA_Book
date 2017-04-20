@@ -59,6 +59,11 @@
   
 ### Gather and extract the King County Assessor Data Files -------------------------------
   
+  # Create a directory for assessor data if one doesn't exist
+  if (!dir.exists(file.path(data.dir, 'assessor'))){
+    dir.create(file.path(data.dir, 'assessor'))
+  }
+  
  ## Sales Transaction File  
   
   # Check if file exists
@@ -68,11 +73,6 @@
     download.file(url=paste0('http://your.kingcounty.gov/extranet/assessor/',
                              'Real Property Sales.zip'), 
                   destfile=file.path(data.dir, 'raw_zip_files', 'sales.zip'))
-  }
-  
-  # Create a directory if one doesn't exist
-  if (!dir.exists(file.path(data.dir, 'assessor'))){
-    dir.create(file.path(data.dir, 'assessor'))
   }
   
   # Unzip
@@ -108,10 +108,7 @@
   unzip(zipfile=file.path(data.dir, 'raw_zip_files', 'resbldg.zip'), 
         exdir=file.path(data.dir, 'assessor'))
 
-  
 ### SAVE FOR PROCESS TO DOWNLOAD NICK'S TWITTER DATA -------------------------------------  
-  
-  
-  
+
 ##########################################################################################
 ##########################################################################################

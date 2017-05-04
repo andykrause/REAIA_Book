@@ -37,6 +37,25 @@ sales.data <- dbReadTable(sales.conn, 'cleanSales')
 
 # Basic model
 
+base.lm <- lm(log(sale.price) ~ as.factor(present.use) + lot.size + tot.sf + 
+                bldg.grade + baths + eff.age + traffic.noise + deck.sf + gar.att.sf + 
+                view.best + is.waterfront + bsmt.sf + sales.date + topo + restr.szshp +
+                condition + gar.bsmt.sf + beds,
+              data=sales.data)
+
+library(MASS)
+
+step.lm <- stepAIC(base.lm, direction="both")
+
+library(BMA)
+
+bma.lm <- bicreg(y=log(sales.data$sale.price),
+                 x=sales.data[,c('present.use', 'lot.size', 'tot.sf', 
+                                 'bldg.grade', 'baths', 'eff.age', 'traffic.noise', 
+                                 'deck.sf', 'gar.att.sf', 'view.best', 'is.waterfront',
+                                 'bsmt.sf', 'sales.date', 'topo', 'restr.szshp',
+                                 'condition', 'gar.bsmt.sf' , 'beds')])
+
   # Stepwise
   # BMA
 

@@ -108,7 +108,18 @@
   unzip(zipfile=file.path(data.dir, 'raw_zip_files', 'resbldg.zip'), 
         exdir=file.path(data.dir, 'assessor'))
 
-### SAVE FOR PROCESS TO DOWNLOAD NICK'S TWITTER DATA -------------------------------------  
+### Gather Crime Statistics Data ---------------------------------------------------------  
 
+  # Create a directory for assessor data if one doesn't exist
+  if (!dir.exists(file.path(data.dir, 'crime'))){
+    dir.create(file.path(data.dir, 'crime'))
+  }
+  
+  # Download .csv from the City of Seattle
+  download.file(url=paste0('https://data.seattle.gov/api/views/7ais-f98f/rows.csv?',
+                           'accessType=DOWNLOAD'), 
+                destfile=file.path(data.dir, 'crime', 'seattle_crime.csv' ))
+  
+  
 ##########################################################################################
 ##########################################################################################

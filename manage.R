@@ -18,7 +18,7 @@
  ## Set data and code directory
 
   data.dir <- 'c:/temp/' 
-  code.dir <- 'c:/code/REAIA_Book/'
+  code.dir <- 'c:/code/research/REAIA_Book/'
 
  ## Load custom source files
 
@@ -26,17 +26,17 @@
 
  ## Set the database path and name  
 
-  sales.db <- file.path(data.dir, 'assessorData.db')
+  data.db <- file.path(data.dir, 'seattleCaseStudy.db')
 
 ### Arrange assessor data into single db file --------------------------------------------
 
  ## Convert CSVs to SQLite
 
- if (!file.exists(sales.db)){
+ if (!file.exists(data.db)){
   
    convertCSVtoSQLite(dataPathCurrent=file.path(data.dir, 'assessor'),
                       dataPathNew=data.dir,
-                      newFileName='assessorData.db',
+                      newFileName='seattleCaseStudy.db',
                       fileNames=c('EXTR_RPSale.csv',
                                   'EXTR_Parcel.csv',
                                   'EXTR_Resbldg.csv'),
@@ -52,13 +52,13 @@
   
  ## Open up connection to database
   
-  sales.conn <- dbConnect(dbDriver('SQLite'), sales.db)
+  db.conn <- dbConnect(dbDriver('SQLite'), data.db)
   
  ## Sales
   
   # Read in data
 
-  sales.data <- dbReadTable(sales.conn, 'Sales')
+  sales.data <- dbReadTable(db.conn, 'Sales')
 
   # Make new UID from ExciseTaxNbr
   sales.data <- dplyr::mutate(sales.data, UID=ExciseTaxNbr)
@@ -95,25 +95,25 @@
   sales.data$uid.suffix <- NULL
 
   # Write out
-  dbRemoveTable(sales.conn, 'Sales')
-  dbWriteTable(sales.conn, 'Sales', sales.data, row.names=FALSE)
+  dbRemoveTable(db.conn, 'Sales')
+  dbWriteTable(db.conn, 'Sales', sales.data, row.names=FALSE)
   
  ## Parcel Data
   
   # Read in data
-  parcel.data <- dbReadTable(sales.conn, 'Parcel')
+  parcel.data <- dbReadTable(db.conn, 'Parcel')
   
   # Add unique pinx field
   parcel.data <- buildPinx(parcel.data)
   
   # Write out
-  dbRemoveTable(sales.conn, 'Parcel')
-  dbWriteTable(sales.conn, 'Parcel', parcel.data, row.names=FALSE)
+  dbRemoveTable(db.conn, 'Parcel')
+  dbWriteTable(db.conn, 'Parcel', parcel.data, row.names=FALSE)
   
 ## ResBldg Data
   
   # Read in data
-  resbldg.data <- dbReadTable(sales.conn, 'ResBldg')
+  resbldg.data <- dbReadTable(db.conn, 'ResBldg')
   
   # Add unique pinx field
   resbldg.data <- buildPinx(resbldg.data)
@@ -123,18 +123,15 @@
   names(resbldg.data)[1] <- 'BldgID'
   
   # Write out
-  dbRemoveTable(sales.conn, 'ResBldg')
-  dbWriteTable(sales.conn, 'ResBldg', resbldg.data, row.names=FALSE)
+  dbRemoveTable(db.conn, 'ResBldg')
+  dbWriteTable(db.conn, 'ResBldg', resbldg.data, row.names=FALSE)
   
  ## Clean up
   
   rm(resbldg.data); rm(parcel.data); rm(sales.data)
   gc()
   
- ## Close connection to database
-  
-  dbDisconnect(sales.conn)
-  
+ 
 ### Convert the Parcel Cadastral data into R objects for faster loading, etc. later ------
   
   ## Convert the parcel file to centroids
@@ -153,6 +150,25 @@
   # Save as an R object for loading later
   save(parcel.centroids, file= file.path(data.dir, 'geographic/parcelcentroids.Rdata'))
 
+### Crime Beat data
+  
+  # Read in data
+  crime.data <- read.csv(file.path(data.dir, 'crime', 'seattle_crime.csv'))
+  
+  # Convert names
+  names(crime.data) <- tolower(names(crime.data))
+  names(crime.data)[1] <- 'uid'
+  
+  # Write out to database
+  if(dbExistsTable(db.conn, 'Crime')){
+    dbRemoveTable(db.conn, 'Crime')
+  }
+  dbWriteTable(db.conn, 'Crime', crime.data, row.names=FALSE)
+  
+  ## Close connection to database
+  
+  dbDisconnect(db.conn)
+  
 ### Convert the Beats data into an R object ----------------------------------------------  
   
   # Read in the Police Beats Data

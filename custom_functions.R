@@ -297,7 +297,146 @@ readData <- function(dbName,
   dbDisconnect(dyConn) 
 }
 
+### Point to surface converter, with optional clip ------------------------------
 
+point2Surface <- function(points, 
+                          surf.data, 
+                          res, 
+                          idp.val=2,
+                          clip=NULL,
+                          verbose=0){
+  
+  # ARGUMENTS
+  #
+  # points: SpatialPointsDataFrame of observations
+  # surf.data: vector of values at the points used to create surface
+  # res: resolultion or size of the grid cells
+  # ipd.val: inverse distance paramter (1 to 4??)
+  # clip: SpatialPolygons to clip the results to  
+  
+  require(sp)
+  require(gstat)
+  require(rgeos)
+  
+  ## Check points
+  
+  if(class(points) != "SpatialPointsDataFrame" & 
+     class(points) != "SpatialPoints"){ 
+    return('Points data must be SpatialPointsDataFrame or SpatialPoints object')
+  }
+  
+  
+  ## Check surface data  
+  
+  if(length(surf.data) != nrow(points@data)){ 
+    return('Data to interpolate not same length as point data')
+  }
+  
+  ## Extract bounding coordinates
+  
+  xy.box <- bbox(points)
+  
+  # expand out resolution
+  xy.box[,1] <- xy.box[,1] - res 
+  xy.box[,2] <- xy.box[,2] + res 
+  
+  ## Build grid of points
+  
+  xs <- seq(xy.box[1, 1], xy.box[1,2], res)
+  ys <- seq(xy.box[2, 1], xy.box[2,2], res)
+  xy.grid <- as.data.frame(expand.grid(xs, ys))
+  colnames(xy.grid) <- c("x", "y")
+  
+  ## Create a SPDF and Pixel DF  
+  
+  xy.grid <- SpatialPointsDataFrame(cbind(xy.grid$x, xy.grid$y), data=xy.grid,
+                                    proj4string=CRS(proj4string(points)))
+  xy.pix <- as(xy.grid, "SpatialPixelsDataFrame")
+  
+  
+  ## Create idw image  
+  
+  image.out <- gstat::idw(surf.data ~ 1, points, xy.pix, 
+                          idp=idp.val, debug.level=verbose)
+  
+  ## If trim
+  
+  if(!is.null(clip)){
+    
+    # Check format
+    if(class(clip) != "SpatialPolygonsDataFrame" & 
+       class(clip) != "SpatialPolygons"){ 
+      return(paste0('Points data must be SpatialPolygonsDataFrame',
+                    'or SpatialPolygons object'))
+    }
+    
+    # Make clip
+    in.xy <- gContains(clip, xy.grid, byid=T) 
+    image.out <- image.out[which(in.xy), ] 
+  }
+  
+  ## Return 
+  
+  return(image.out)
+  
+}
+
+
+
+
+
+
+
+################################################################################  
+# Great a grid covering a set of points ----------------------------------------
+
+createGridPoints <- function(X, gscale, mask=F){
+  
+  require(sp)
+  
+  # Set bounding range  
+  BBox <- X@bbox
+  xmin <- round(BBox[1,1] - gscale, -round(log(gscale,10),0))
+  xmax <- round(BBox[1,2] - gscale, -round(log(gscale,10),0))
+  ymin <- round(BBox[2,1] - gscale, -round(log(gscale,10),0))
+  ymax <- round(BBox[2,2] - gscale, -round(log(gscale,10),0))
+  xrange <- xmax - xmin
+  yrange <- ymax - ymin
+  
+  # set up capture object
+  grid.coords <- matrix(nrow=(yrange/gscale) * (xrange/gscale), ncol = 2)
+  x.nums <- (xmin/gscale):(xmax/gscale)
+  y.nums <- (ymin/gscale):(ymax/gscale)
+  
+  # Assign Points 
+  for(x in 1:(xrange/gscale)){
+    for(y in 1:(yrange/gscale)){
+      grid.coords[((x-1)*(yrange/gscale))+y,] <- c(x.nums[x]*gscale,
+                                                   y.nums[y]*gscale)
+    }
+  }
+  
+  grid.coords <- grid.coords[!is.na(grid.coords[,1]),]
+  
+  # Create Full Grid
+  grid.sp <- SpatialPointsDataFrame(grid.coords, 
+                                    data=as.data.frame(1:dim(grid.coords)[1]),
+                                    proj4string=X@proj4string)
+  
+  # Mask
+  if(mask){  
+    #gi <- which(gIntersects(X, grid.sp, byid=T))
+    #grid.sp <- grid.sp[which(gi),]
+    gi <- over(grid.sp, X)
+    giX <- which(!is.na(gi[,1]))
+    grid.sp <- grid.sp[giX, ]
+  }
+  
+  # Return grip
+  
+  return(grid.sp)
+  
+}
 
 
 

@@ -18,7 +18,7 @@
  
   #data.dir <- 'c:/dropbox/research/bigdatabook/data/'
   data.dir <- 'c:/temp/'
-  code.dir <- 'c:/code/REAIA_book/'
+  code.dir <- 'c:/code/research/REAIA_book/'
   
  ## Load custom source files
   
@@ -26,13 +26,13 @@
   
  ## Set the database path and name  
   
-  sales.db <- file.path(data.dir, 'assessorData.db')
+  data.db <- file.path(data.dir, 'seattleCaseStudy.db')
 
 ### Initial clean of sales to eliminate non-relevant observations ------------------------ 
 
   # Read in Sales File
-  sales.conn <- dbConnect(dbDriver('SQLite'), sales.db)
-  sales.data <- dbReadTable(sales.conn, 'Sales')
+  db.conn <- dbConnect(dbDriver('SQLite'), data.db)
+  sales.data <- dbReadTable(db.conn, 'Sales')
   
  ## Transform and Filtering Activities for Sales (Interspersed) 
   
@@ -122,13 +122,13 @@
  ## Read in Data
   
   # Parcel Data
-  parcel.data <- dbReadTable(sales.conn, 'parcel')
+  parcel.data <- dbReadTable(db.conn, 'parcel')
   
   # Mutate Pinx number
   parcel.data <- buildPinx(parcel.data)
   
   # Res Building data
-  resbldg.data <- dbReadTable(sales.conn, 'resbldg')
+  resbldg.data <- dbReadTable(db.conn, 'resbldg')
   
   # Mutate pinx number
   resbldg.data <- buildPinx(resbldg.data)
@@ -363,10 +363,82 @@
   sales.data$zoning[grep('NR', sales.data$zoning)] <- 'Other'
   
   # Write to the database
-  dbWriteTable(sales.conn, 'prepSales', sales.data, row.names=FALSE, overwrite=TRUE)
+  dbWriteTable(db.conn, 'prepSales', sales.data, row.names=FALSE, overwrite=TRUE)
 
   # Close
-  dbDisconnect(sales.conn)
+  dbDisconnect(db.conn)
 
+### Crime Data ---------------------------------------------------------------------------  
+  
+ ## Read in Data
+  
+  crime.data <- dbReadTable(db.conn, 'Crime')
+  
+ ## Transform date and time fields  
+  
+  # Extract date only from time/date field
+  crime.data <- dplyr::mutate(.data=crime.data,
+                              crime.date = as.Date(substr(
+                                occurred.date.or.date.range.start, 1, 10), '%m/%d/%Y'))
+                              
+  # Extract time and convert to 24 hour scale                            
+  crime.data <- dplyr::mutate(.data=crime.data,
+                              crime.time = substr(
+                                occurred.date.or.date.range.start, 12, 20))
+  
+  crime.data$crime.time <- as.numeric(substr(crime.data$crime.time,1,2)) + 
+                         as.numeric(substr(crime.data$crime.time,4,5))/60
+  
+  crime.data$crime.time <- ifelse(substr(crime.data$occurred.date.or.date.range.start, 
+                                   21, 21) == 'A', 
+                            crime.data$crime.time,
+                            crime.data$crime.time + 12)
+  
+  crime.data$crime.time <- ifelse(crime.data$crime.time >=24, 
+                            crime.data$crime.time - 24, 
+                            crime.data$crime.time)
+  
+ ## Recategorize crime
+  
+  # Create Crime Groups
+  violent <- c('ASSAULT', 'HOMICIDE', 'ROBBERY', 'WEAPON')
+  property <- c('BIKE THEFT', 'BURGLARY', 'CAR PROWL', 'ILLEGAL DUMPING', 'MAIL THEFT',
+                'OTHER PROPERTY', 'PICKPOCKET', 'PROPERTY DAMAGE', 'PURSE SNATCH', 
+                'SHOPLIFTING', 'STOLEN PROPERTY', 'THEFT OF SERVICES', 'VEHICLE THEFT')
+  behavior <- c('DISPUTE', 'DISORDERLY CONDUCT', 'DISTURBANCE', 'LIQUOR VIOLATION', 
+                'LOITERING', 'NARCOTICS', 'PROSTITUTION', 'PUBLIC NUISANCE', 'THREATS',
+                'TRESPASS')
+  traffic <- c('TRAFFIC', 'DUI')
+  
+  # Assign new groups
+  crime.data$crime.type <- 'other'
+  crime.data$crime.type[crime.data$summarized.offense.description %in% 
+                          violent] <- 'violent'
+  crime.data$crime.type[crime.data$summarized.offense.description %in% 
+                          property] <- 'property'
+  crime.data$crime.type[crime.data$summarized.offense.description %in% 
+                          behavior] <- 'behavior'
+  crime.data$crime.type[crime.data$summarized.offense.description %in% 
+                          traffic] <- 'traffic'
+ 
+  # Convert sales.date to character to write to database
+  crime.data <- dplyr::mutate(.data=crime.data,
+                              crime.date = as.character(crime.date))  
+  
+  # Write out to database
+  if(dbExistsTable(db.conn, 'Crime')){
+    dbRemoveTable(db.conn, 'Crime')
+  }
+  dbWriteTable(db.conn, 'Crime', crime.data, row.names=FALSE)
+  
+##########################################################################################  
+  
+  
+  
+  
+  
+  
+  
+  
 ##########################################################################################
 ##########################################################################################

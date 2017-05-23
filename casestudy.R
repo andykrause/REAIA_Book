@@ -23,6 +23,7 @@
   library(spdep)
   library(car)
   library(lmtest)
+  library(gstat)
 
  ## Set data and code directory
 
@@ -35,128 +36,115 @@
   
 ### Load Workspace from Modeling chapter -------------------------------------------------
   
+  # Modeling workspace
   load(file.path(data.dir, 'model_workspace.RData'))
-  
-  
-  
-  
-  
-  ### Summary Stats and map ----------------------------------------------------------------
-  
-  # MOVE TO CASE STUDY SEcTION  
-  
-  export.path <- 'c:/dropbox/research/bigdatabook/chap12/figures/'
-  
-  ## Map of transactoins
-  
-  ## Set bounds for OSM map
-  lowerleft <- c(min(sales.data$latitude) - .002,
-                 min(sales.data$longitude) - .011)
-  upperright <- c(max(sales.data$latitude) + .002,
-                  max(sales.data$longitude) + .011)
-  
-  ## Get OSM Map
-  
-  # Get map
-  seattle.map <- openmap(lowerleft, upperright, type='osm')
-  
-  # Change Projection
-  seattle.map <- openproj(seattle.map, projection="+proj=longlat +datum=WGS84 +no_defs")
-  
-  ## Plot Map and sales points   
-  
-  seattle.map <- autoplot(seattle.map) + 
-    geom_point(data=sales.data, 
-               aes(x=longitude, y=latitude), 
-               size=1.6) +
-    ylab('') + 
-    xlab('') +
-    theme(legend.position='bottom', 
-          axis.text=element_blank(),
-          axis.ticks = element_blank())
 
-  ## Summary Statistics
-  
-  # Calculate Field Types
-  field.types <- unlist(lapply(sales.data, class))
-  
-  # Calculate summary table
-  summ.table <- t(do.call(cbind, 
-                          lapply(sales.data[,field.types == 'numeric' |
-                                              field.types == 'integer'],
-                                 fullSummary)))
-  
+  # Load beat spatial file
+  load(file=file.path(data.dir, 'geographic/beats.Rdata'))
 
-  ### Crime on Price -----------------------------------------------------------------------
+  # Sent Tweets (MOVE THIS TO MANAGE, etc)  
+  tweet.sent <- read.csv('c:/dropbox/research/bigdatabook/data/tweetsentiment.csv',
+                         header=T)
+  
+### Crime on Price -----------------------------------------------------------------------
+  
+ ## Load data
   
   sales.db <- file.path(data.dir, 'seattleCaseStudy.db')
   
   sales.conn <- dbConnect(dbDriver('SQLite'), sales.db)
   crime.data <- dbReadTable(sales.conn, 'Crime')
-  
-  crime.data <- crime.data[crime.data$year >= 2015, ]
-  thres = 400
+
+  # Fix the date field
   crime.data$crime.date <- as.Date(crime.data$crime.date)
   
-  library(geosphere)
+ ## Add crime stats to the sales data
+  ## MOVE TO PREPARE IN FUTURE
+   
+  # Limite crime data to 2015 or later  
+  crime.data <- crime.data[crime.data$year >= 2015, ]
+  
+  # Set distance threshold in Meters
+  dist.thres <- 400
+  
+  # Set blank values
   sales.data$crime.violent <- 0
   sales.data$crime.property <- 0
   sales.data$crime.traffic <- 0
   sales.data$crime.behavior <- 0
   sales.data$crime.other <- 0
   
+  # Loop through each and calculate local crime counts
   for(j in 1:nrow(sales.data)){
+    
+    # Extract sales data
     j.data <- sales.data[j,]
+    
+    # Calculate time difference
     x.days <- j.data$sales.date - crime.data$crime.date
-    c.data <- crime.data[x.days >0 & x.days < 365, ]
     
+    # Limit crime data to time window
+    c.data <- crime.data[x.days > 0 & x.days < 365, ]
     
+    # Calculate distances
     j.dist <- distHaversine(j.data[,c('longitude', 'latitude')],
                             c.data[,c('longitude', 'latitude')])
-    cx.data <- c.data[j.dist < thres, ]
     
+    # Limit data to those within threshold
+    cx.data <- c.data[j.dist < dist.thres, ]
+    
+    # Add count to the sales data
     sales.data$crime.violent[j] <- length(which(cx.data$crime.type == 'violent'))
     sales.data$crime.property[j] <- length(which(cx.data$crime.type == 'property'))
     sales.data$crime.behavior[j] <- length(which(cx.data$crime.type == 'behavior'))
     sales.data$crime.traffic[j] <- length(which(cx.data$crime.type == 'traffic'))
     sales.data$crime.other[j] <- length(which(cx.data$crime.type == 'other'))
     
-    if(j%%100 == 0){
-      cat('record number\n', j, '\n\n')
+    # Report on progress
+    if(j %% 100 == 0){
+      cat('record number ', j, '\n')
     }
   }
   
-  ## Build crime model
+ ## Build crime model
   
-  crime.lm <- lm(log(sale.price) ~ as.factor(present.use) + log(lot.size) + log(tot.sf) + 
-                   as.factor(bldg.grade) + baths + eff.age + traffic.noise + 
-                   deck.sf + gar.att.sf+ 
-                   view.best + is.waterfront + bsmt.sf + condition + beds + 
-                   as.factor(month) + crime.violent + crime.property + crime.traffic +
-                   crime.behavior + crime.other,
+  # OLS Specification
+  crime.lm <- lm(update(base.lm, . ~ + crime.violent + crime.property + crime.traffic +
+                   crime.behavior + crime.other),
                  data=sales.data)
   
   
-  sp.data <- SpatialPointsDataFrame(cbind(sales.data$longitude,
-                                          sales.data$latitude),
-                                    sales.data)
+ ## Spatial error specification
+  # Build Data
+  sales.sp <- SpatialPointsDataFrame(cbind(sales.data$longitude,
+                                           sales.data$latitude),
+                                     sales.data)
   
-  nbList <- knn2nb(knearneigh(sp.data, 5))
+  # Create neighbor list
+  nbList <- knn2nb(knearneigh(sales.sp, 10))
   
-  ## Create Distances
-  nbDists <- nbdists(nbList, sp.data)    
+  # Create Distances
+  nbDists <- nbdists(nbList, sales.sp)    
   
-  ## Building Weights Matrix
-  swm <- listw2U(nb2listw(nbList, glist = lapply(nbDists, dwf)
-                          , style="W",zero.policy=T))
+  # Building Weights Matrix
+  swm <- listw2U(nb2listw(nbList, 
+                          glist = lapply(nbDists, dwf),
+                          style="W",
+                          zero.policy=T))
   
-  crime.se <- errorsarlm(as.formula(crime.lm),data=sp.data,
-                         swm, method="spam", zero.policy=TRUE)
+  # Estimate model
+  crime.se <- errorsarlm(as.formula(crime.lm),
+                         data=sales.sp,
+                         swm,
+                         method="spam", 
+                         zero.policy=TRUE)
   
-  ### Estimate models by beat
+ ## Compare appreciation rates to crime at the Beat level
   
+  # Create quarter variable
   sales.data$qtr <- ((sales.data$month - 1) %/% 3) + 1
   
+  # Create table of crime counts by beat
   beat.crime <- dplyr::group_by(crime.data, zone.beat) %>% 
     dplyr::summarize(
       violent=length(which(crime.type =='violent')),
@@ -166,191 +154,287 @@
       other = length(which(crime.type == 'other')),
       all= n())
   
+  # Add blank appreciation and sales count fields
   beat.crime$appr <- 0
   beat.crime$sales <- 0
   
+  # Estimate a model at for each beat
   for(b in 1:nrow(beat.crime)){
     
+    # Select sales
     beat.sales <- sales.data[sales.data$beat == beat.crime$zone.beat[b], ]
     
+    # If enough sales for a model
     if(nrow(beat.sales) >= 100){
       
+      # Create spatial points data frame
       beat.sp <- SpatialPointsDataFrame(cbind(beat.sales$longitude,
                                               beat.sales$latitude),
                                         beat.sales)
       
-      nbList <- knn2nb(knearneigh(beat.sp, 5))
+      # Make neighbors
+      nbList <- knn2nb(knearneigh(beat.sp, 10))
       
-      ## Create Distances
+      # Create Distances
       nbDists <- nbdists(nbList, beat.sp)    
       
-      ## Building Weights Matrix
+      # Building Weights Matrix
       swm <- listw2U(nb2listw(nbList, 
                               glist = lapply(nbDists, dwf), 
                               style="W",
                               zero.policy=T))
       
+      # Create model specification
       beat.spec <- as.formula(base.adj.lm)
-      beat.spec <- update(beat.spec, ~ . - as.factor(month))
+      beat.spec <- update(beat.spec, ~ . - sales.date)
       beat.spec <- update(beat.spec, ~ . + as.factor(qtr))
+      
+      # Remove waterfront if none exist
       if(length(which(beat.sales$is.waterfront == 1)) == 0){
         beat.spec <- update(beat.spec, ~ . - is.waterfront)
       }
+      
+      # Remove views if none exist
       if(length(table(beat.sales$view.best)) <= 1){
         beat.spec <- update(beat.spec, ~ . - view.best)
       }
       
-      
+      # Estimate the model
       beat.se <- tryCatch(errorsarlm(beat.spec,
                                      data=beat.sp,
                                      swm, 
                                      method="spam", 
                                      zero.policy=TRUE), silent=T)
       
+      # Extract coefficients
       if(class(beat.se) == 'sarlm'){
         coefs <- summary(beat.se)$coefficients
+        
+        # Extract quarter 4 appreciation rate
         b.coef <- coefs[grep('qtr)4', names(coefs))]
         beat.crime$appr[b] <- b.coef
         beat.crime$sales[b] <- nrow(beat.sales)
+        
       } else {
+        
         beat.crime$appr[b] <- NA
+      
       }
       
     } else {
+      
       beat.crime$appr[b] <- NA
     }  
-    
   }
   
-  load(file=file.path(data.dir, 'geographic/beats.Rdata'))
+  # Convert beats shapefile from 'sf' to 'sp'
   beats.sp <- as(beats, 'Spatial')
   beats.sp@data$id <- paste0("ID", 1:nrow(beats.sp@data))
   beats.spf <- broom::tidy(beats.sp)
   beats.spf$beat <- beats.sp@data$beat[match(beats.spf$id, 
                                              beats.sp@data$id)]
   
+  # Extract area measurement from the shapefile
   btp <- beats.sp@polygons
   llarea <- unlist(lapply(btp, function(x) x@area))
-  llarea <- llarea * (68.99^2)
+  
+  # Convert to square miles
+  llarea <- llarea * (68.99 ^ 2)
+  
+  # Add to data
   beats.sp@data$size <- llarea
+  
+  # Add area measurement
   beat.crime$area <- beats.sp@data$size[match(beat.crime$zone.beat,
                                               beats.sp@data$beat)]
   
+  # Remove beats with no appreciation
   beat.crime <- beat.crime[!is.na(beat.crime$appr), ]
   
-  beat.crime$viol.area <- beat.crime$violent/beat.crime$area
-  beat.crime$prop.area <- beat.crime$property/beat.crime$area
-  beat.crime$beha.area <- beat.crime$behavior/beat.crime$area
-  beat.crime$traf.area <- beat.crime$traffic/beat.crime$area
-  beat.crime$othe.area <- beat.crime$other/beat.crime$area
-  beat.crime$all.area <- beat.crime$all/beat.crime$area
+  # Calculate  crime per square mile
+  beat.crime$viol.area <- beat.crime$violent / beat.crime$area
+  beat.crime$prop.area <- beat.crime$property / beat.crime$area
+  beat.crime$beha.area <- beat.crime$behavior / beat.crime$area
+  beat.crime$traf.area <- beat.crime$traffic / beat.crime$area
+  beat.crime$othe.area <- beat.crime$other / beat.crime$area
+  beat.crime$all.area <- beat.crime$all / beat.crime$area
   
-  ggplot(beat.crime, aes(x=all.area, y=appr)) + 
+ ## Make Plots
+  
+  # All crime
+  all.crime.plot <- ggplot(beat.crime, 
+                           aes(x=all.area, y=appr)) + 
+                      geom_point() +
+                      stat_smooth(se=FALSE, size=2) +
+                      xlab("Reported Crimes per Sq. Mile") + 
+                      ylab("2016 Appreciation Rate:\nQ1 to Q4\n") + 
+                      ggtitle('All Crime vs Appreciation') +
+                      theme(plot.title = element_text(hjust = 0.5))
+  
+  # Violent crime
+  viol.crime.plot <- ggplot(beat.crime, 
+                           aes(x=viol.area, y=appr)) + 
     geom_point() +
-    stat_smooth()
-  ggplot(beat.crime, aes(x=viol.area, y=appr)) + 
+    stat_smooth(se=FALSE, size=2) +
+    xlab("Reported Crimes per Sq. Mile") + 
+    ylab("2016 Appreciation Rate:\nQ1 to Q4\n") + 
+    ggtitle('Violent vs Appreciation') +
+    theme(plot.title = element_text(hjust = 0.5))
+
+  # Property crime
+  prop.crime.plot <- ggplot(beat.crime, 
+                            aes(x=prop.area, y=appr)) + 
     geom_point() +
-    stat_smooth()
-  ggplot(beat.crime, aes(x=prop.area, y=appr)) + 
+    stat_smooth(se=FALSE, size=2) +
+    xlab("Reported Crimes per Sq. Mile") + 
+    ylab("2016 Appreciation Rate:\nQ1 to Q4\n") + 
+    ggtitle('Property vs Appreciation') +
+    theme(plot.title = element_text(hjust = 0.5))
+  
+  # Behavior crime
+  beha.crime.plot <- ggplot(beat.crime, 
+                            aes(x=beha.area, y=appr)) + 
     geom_point() +
-    stat_smooth()
-  ggplot(beat.crime, aes(x=beha.area, y=appr)) + 
+    stat_smooth(se=FALSE, size=2) +
+    xlab("Reported Crimes per Sq. Mile") + 
+    ylab("2016 Appreciation Rate:\nQ1 to Q4\n") + 
+    ggtitle('Behavioral vs Appreciation') +
+    theme(plot.title = element_text(hjust = 0.5))
+  
+  # Property crime
+  traf.crime.plot <- ggplot(beat.crime, 
+                            aes(x=traf.area, y=appr)) + 
     geom_point() +
-    stat_smooth()
-  ggplot(beat.crime, aes(x=traf.area, y=appr)) + 
+    stat_smooth(se=FALSE, size=2) +
+    xlab("Reported Crimes per Sq. Mile") + 
+    ylab("2016 Appreciation Rate:\nQ1 to Q4\n") + 
+    ggtitle('Traffic vs Appreciation') +
+    theme(plot.title = element_text(hjust = 0.5))
+  
+  # Other crime
+  othe.crime.plot <- ggplot(beat.crime, 
+                            aes(x=othe.area, y=appr)) + 
     geom_point() +
-    stat_smooth()
-  ggplot(beat.crime, aes(x=othe.area, y=appr)) + 
-    geom_point() +
-    stat_smooth()
+    stat_smooth(se=FALSE, size=2) +
+    xlab("Reported Crimes per Sq. Mile") + 
+    ylab("2016 Appreciation Rate:\nQ1 to Q4\n") + 
+    ggtitle('Other vs Appreciation') +
+    theme(plot.title = element_text(hjust = 0.5))
   
-  ### Sentiment analysis -------------------------------------------------------------------  
   
-  ##########
+### Sentiment analysis -------------------------------------------------------------------  
   
-  tweet.sent <- read.csv('c:/dropbox/research/bigdatabook/data/tweetsentiment.csv',
-                         header=T)
+ ## Limit to Tweets in the city (MOVE TO PREPARE)
   
-  tss <- dplyr::group_by(tweet.sent, screenName) %>%
-    dplyr::summarize(count=n())
+  # Create city boundary
+  seattle.bound <- gUnaryUnion(beats.sp)
   
-  tweet.sent <- merge(tweet.sent, tss, by='screenName')
-  
-  tweet.sent <- tweet.sent[tweet.sent$longitude > -123 & tweet.sent$longitude < -122, ]
-  tweet.sent <- tweet.sent[tweet.sent$latitude > 47 & tweet.sent$latitude < 48, ]
-  
+  # Convert tweet to spatial poing data frame
   tweet.sp <- SpatialPointsDataFrame(cbind(tweet.sent$longitude, tweet.sent$latitude),
                                      data=tweet.sent)
   proj4string(tweet.sp) <- CRS(proj4string(beats.sp))
   
-  tweet.0 <- tweet.sent[tweet.sent$SentimentScore != 0, ]
-  tw0.sp <- SpatialPointsDataFrame(cbind(tweet.0$longitude, tweet.0$latitude),
-                                   data=tweet.0)
-  proj4string(tw0.sp) <- CRS(proj4string(beats.sp))
+  # Clip by city boundary
+  in.seattle <- gIntersects(tweet.sp, seattle.bound, byid=T)
+  tweet.sp <- tweet.sp[which(in.seattle), ]
   
+ ## Create a dataset with only tweet with a non-zero sentiment
   
-  ggplot(tweet.0, aes(x=longitude, y=latitude)) + 
-    geom_point() + 
+  # Make dataset
+  twsent.sp <- tweet.sp[tweet.sp@data$SentimentScore != 0, ]
+  
+  # Convert all tweets to -1 or 1
+  twsent.sp@data$SS <- ifelse(twsent.sp@data$SentimentScore < 0, -1, 1)
+  
+  # Create a simle DF
+  twsent <- twsent.sp@data
+  
+ ## Make plot of sentiment tweets
+    
+  sent.map <- ggplot() + 
     geom_polygon(data=beats.spf, aes(x=long, y=lat, group=beat), 
                  color='gray40', fill='gray80')+
-    coord_cartesian(xlim=c(min(sales.data$longitude), max(sales.data$longitude)),
-                    ylim=c(min(sales.data$latitude), max(sales.data$latitude))) +
-    geom_point(data=tweet.sent, aes(x=longitude, y=latitude, 
-                                    color=SentimentScore), size=2) +
-    scale_color_gradient(low='black', high='green')
+    # coord_cartesian(xlim=c(min(sales.data$longitude), max(sales.data$longitude)),
+    #                 ylim=c(min(sales.data$latitude), max(sales.data$latitude))) +
+     geom_point(data=twsent, 
+                aes(x=longitude, y=latitude, color=as.factor(SS)), 
+                size=2) +
+    scale_color_manual(values=c('blue', 'red'),
+                       labels=c("Negative   ", 'Positive    '),
+                       name='Sentiment    ') +
+    ylab('') + 
+    xlab('') +
+    theme(legend.position='bottom', 
+          axis.text=element_blank(),
+          axis.ticks = element_blank())
   
-  ggplot(tweet.sent, aes(x=longitude, y=latitude)) + 
-    geom_polygon(data=beats.spf, aes(x=long, y=lat, group=beat), 
-                 color='gray40', fill='gray80')+
-    coord_cartesian(xlim=c(min(sales.data$longitude), max(sales.data$longitude)),
-                    ylim=c(min(sales.data$latitude), max(sales.data$latitude))) +
-    geom_point(data=sales.data, aes(x=longitude, y=latitude), 
-               color='red', size=.9)
+ ## Create sentiment surface
   
+  # Build surface
+  sent.surf <- point2Surface(twsent.sp, 
+                             twsent.sp$SS, 
+                             res=.004, 
+                             clip=seattle.bound, 
+                             idp.val=5)
   
-  library(spgwr)
+  # Convert to a tidy format
+  surf.df <- data.frame(long=sent.surf@coords[,1],
+                        lat=sent.surf@coords[,2],
+                        sentiment=sent.surf@data$var1.pred)
   
-  library(rgeos)
-  bound <- gUnaryUnion(beats.sp)
+  # Make a map
+  sent.map <- ggplot(surf.df, aes(x=long, y=lat, z=sentiment)) +
+    geom_tile(aes(fill = sentiment), alpha=.7) +
+    scale_fill_gradient2(low=muted('red'), high=muted('blue'),
+                         name='Sentiment    ',
+                         breaks=c(-.75, 0, .75),
+                         labels=c('Negative', 'Neutral', 'Positive')) + 
+    ylab('') + 
+    xlab('') +
+    ggtitle('Sentiment in Seattle') +
+    theme(legend.position='bottom',
+          legend.key.width=unit(3,'cm'),
+          axis.text=element_blank(),
+          axis.ticks = element_blank(),
+          plot.title = element_text(hjust = 0.5))
   
-  tweet.0$sss <- ifelse(tweet.0$SentimentScore >= 1, 1, -1)
-  gg <- point2Surface(tw0.sp, tweet.0$SentimentScore, res=.004, clip=bound, idp.val=3)
-  ggs <- point2Surface(tw0.sp, tweet.0$sss, res=.004, clip=bound, idp.val=3)
-  
-  gwr.spec <- as.formula(base.adj.lm)
-  gwr.spec <- update(gwr.spec, ~ . - as.factor(month))
+ ## Calculate local housing appreciation  
+    
+  # Set the specification
+  gwr.spec <- update(as.formula(base.lm), ~ . - sales.date)
   gwr.spec <- update(gwr.spec, ~ . + as.factor(qtr))
   
+  # Create spatial points data set
   gwr.data <- SpatialPointsDataFrame(cbind(sales.data$longitude,
                                            sales.data$latitude),
-                                     data=sales.data)  
-  aa<-gwr(gwr.spec, gwr.data, fit.points=gg@coords, bandwidth=.01)
+                                     data=sales.data)
   
-  gwr.coef <- aa$SDF@data
+  # Run the local GWR models
+  price.gwr <-gwr(gwr.spec, gwr.data, fit.points=sent.surf@coords, bandwidth=.1)
   
+  # Extract the coefficients for Q4 appreciations
+  gwr.coef <- price.gwr$SDF@data
   appr.coef <- gwr.coef[,ncol(gwr.coef)]
   
-  rr <- data.frame(x=gg@coords[,1],y=gg@coords[,2], ss=gg@data$var1.pred, 
-                   sss=ggs@data$var1.pred,
-                   appr=appr.coef)
+  # Add these to the data frame of surfact values
+  surf.df$appr <- appr.coef
   
-  ggplot(rr, aes(x=x, y=y, color=ss))+geom_point(size=9, shape=15) +
-    scale_color_gradient(low='black', high='green')
+ ## Plot relationship
   
-  ggplot(rr, aes(x=x, y=y, color=sss))+geom_point(size=9, shape=15) +
-    scale_color_gradient(low='black', high='green')
-  
-  ggplot(rr, aes(x=sss, y=appr)) + geom_point() + stat_smooth() +
+  sent.appr.plot <- ggplot(surf.df, aes(x=sentiment, y=appr)) + 
+    geom_point(alpha=.4, size=.9) + 
+    stat_smooth(size=2, se=TRUE, color='red') +
+    scale_y_continuous(breaks=seq(0,.08, .01),
+                       labels=c('0%', '1%', '2%', '3%', '4%', '5%', '6%', '7%', '8%')) +
     xlab('Sentiment Score') +
-    ylab('Appreciation in 2016')
+    ylab('Appreciation Rate in 2016\n') +
+    # coord_cartesian(ylim=c(-.07, .17)) + 
+    ggtitle('Local House Appreciation vs Sentiment') +
+    theme(plot.title = element_text(hjust = 0.5))
   
   
+### Save workspace for Case Study analysis -----------------------------------------------
   
-  
-  lowerleft=c(min(sales.data$latitude)-.02,
-              min(sales.data$longitude)-.02)
-  upperright=c(max(sales.data$latitude)+.02,
-               max(sales.data$longitude)+.02)
-  
+  save.image(file.path(data.dir, 'casestudy_workspace.RData'))
   
   

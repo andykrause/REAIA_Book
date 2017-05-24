@@ -30,33 +30,6 @@
 
  ## Custom Functions
   
-  fullSummary <- function(x){
-    
-    Min <- min(x)
-    
-    Pctl.01 <- quantile(x, .01)
-    Pctl.05 <- quantile(x, .05)
-    Pctl.25 <- quantile(x, .25)
-    
-    Pctl.50 <- quantile(x, .50)
-    Mean <- mean(x)
-    
-    Pctl.75 <- quantile(x, .75)
-    Pctl.95 <- quantile(x, .95)
-    Pctl.99 <- quantile(x, .99)
-    
-    Max <- max(x)
-    
-    StDev <- sd(x)
-    
-    return(c(Min=Min, 
-             Pctl.01=Pctl.01, Pctl.05=Pctl.05, Pctl.25=Pctl.25, 
-             Median=Pctl.50, Mean=Mean,
-             Pctl.75=Pctl.75, Pctl.95=Pctl.95, Pctl.99=Pctl.99, 
-             Max=Max,
-             StDev=StDev))
-  }
-  
 ### Load data ----------------------------------------------------------------------------  
   
   # Read in Sales File

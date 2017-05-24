@@ -109,7 +109,7 @@
  ## Build crime model
   
   # OLS Specification
-  crime.lm <- lm(update(base.lm, . ~ + crime.violent + crime.property + crime.traffic +
+  crime.lm <- lm(update(as.formula(base.lm), . ~ . + crime.violent + crime.property + crime.traffic +
                    crime.behavior + crime.other),
                  data=sales.data)
   
@@ -142,6 +142,7 @@
  ## Compare appreciation rates to crime at the Beat level
   
   # Create quarter variable
+  sales.data$month <- as.numeric(substr(sales.data$sales.date, 6, 7))
   sales.data$qtr <- ((sales.data$month - 1) %/% 3) + 1
   
   # Create table of crime counts by beat
@@ -321,7 +322,6 @@
     ggtitle('Other vs Appreciation') +
     theme(plot.title = element_text(hjust = 0.5))
   
-  
 ### Sentiment analysis -------------------------------------------------------------------  
   
  ## Limit to Tweets in the city (MOVE TO PREPARE)
@@ -431,7 +431,6 @@
     # coord_cartesian(ylim=c(-.07, .17)) + 
     ggtitle('Local House Appreciation vs Sentiment') +
     theme(plot.title = element_text(hjust = 0.5))
-  
   
 ### Save workspace for Case Study analysis -----------------------------------------------
   

@@ -122,8 +122,14 @@
 
  ## Heteroskedasticity
 
+  # Studentized
   bptest(base.lm)
+  
+  # Not studentized
   ncvTest(base.lm)
+  
+  # Check white's errors
+  coeftest(base.lm, vcov=vcovHC(base.lm, "HC1"))
   
  ## Spatial Autocorrelation
 

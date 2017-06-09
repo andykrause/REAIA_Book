@@ -294,8 +294,6 @@
   parcel.centroids$pinx <- paste0('..', parcel.centroids$PIN)
   
   # Remove unnecessary fields
-  parcel.centroids$MAJOR <- NULL
-  parcel.centroids$MINOR <- NULL
   parcel.centroids$PIN <- NULL
   
   # Filter: Limit to those parcels in the sale dataset
@@ -334,8 +332,8 @@
  ## Add location data to sales  
   
   # Transform: Create Separate Lat/long Columns 
-  parcel.centroids$longitude <- unlist(lapply(parcel.centroids$geometry, function(x) x[1]))
-  parcel.centroids$latitude <- unlist(lapply(parcel.centroids$geometry, function(x) x[2]))
+  parcel.centroids$longitude <- unlist(lapply(parcel.centroids$parcel.centroids, function(x) x[1]))
+  parcel.centroids$latitude <- unlist(lapply(parcel.centroids$parcel.centroids, function(x) x[2]))
   
   # Save Data
   save(parcel.centroids, 
@@ -346,7 +344,6 @@
   sales.data <- merge(sales.data, 
                       parcel.centroids[ , c('pinx', 'beat', 'longitude', 'latitude')],
                       by='pinx')
-  sales.data$geometry <- NULL
   
   # Convert sales.date to character to write to database
   sales.data <- dplyr::mutate(.data=sales.data,
@@ -364,9 +361,6 @@
   
   # Write to the database
   dbWriteTable(db.conn, 'prepSales', sales.data, row.names=FALSE, overwrite=TRUE)
-
-  # Close
-  dbDisconnect(db.conn)
 
 ### Crime Data ---------------------------------------------------------------------------  
   
@@ -430,6 +424,9 @@
     dbRemoveTable(db.conn, 'Crime')
   }
   dbWriteTable(db.conn, 'Crime', crime.data, row.names=FALSE)
+  
+  # Close
+  dbDisconnect(db.conn)
   
 ##########################################################################################  
   

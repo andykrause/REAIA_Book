@@ -144,8 +144,12 @@
   
   # Extract centroid Lat longs
   parcel.centroids <- st_centroid(parcels)
-  parcel.centroids$Shape_area <- NULL
-  parcel.centroids$Shape_len <- NULL
+  
+  # Convert to a simple features data.frame
+  parcel.centroids <- st_sf(parcel.centroids)
+  
+  # Add PIN values
+  parcel.centroids$PIN <- parcels$PIN
   
   # Save as an R object for loading later
   save(parcel.centroids, file= file.path(data.dir, 'geographic/parcelcentroids.Rdata'))

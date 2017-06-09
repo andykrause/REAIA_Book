@@ -18,7 +18,7 @@
  ## Set data and code directory
 
   data.dir <- 'c:/temp/'
-  code.dir <- 'c:/code/REAIA_book/'
+  code.dir <- 'c:/code/research/REAIA_book/'
 
  ## Load custom source files
 
@@ -26,15 +26,13 @@
 
  ## Set the database path and name  
 
-  sales.db <- file.path(data.dir, 'assessorData.db')
+  data.db <- file.path(data.dir, 'seattleCaseStudy.db')
 
- ## Custom Functions
-  
 ### Load data ----------------------------------------------------------------------------  
   
   # Read in Sales File
-  sales.conn <- dbConnect(dbDriver('SQLite'), sales.db)
-  sales.data <- dbReadTable(sales.conn, 'prepSales')
+  db.conn <- dbConnect(dbDriver('SQLite'), data.db)
+  sales.data <- dbReadTable(db.conn, 'prepSales')
 
   # Load City Police Beats Data
   load(file=file.path(data.dir, 'geographic/beats.Rdata'))
@@ -44,7 +42,6 @@
   # Fix date issue
   sales.data <- dplyr::mutate(.data=sales.data,
                                sales.date=as.Date(sales.date))
-  
   
   # Fix categorical varialbes
   cat.vars <- c('present.use', 'zoning', 'topo', 'restr.szshp',
@@ -942,10 +939,10 @@
   
   # Write to the database
   sales.data$sales.date <- as.character(sales.data$sales.date)
-  dbWriteTable(sales.conn, 'cleanSales', sales.data, row.names=FALSE, overwrite=TRUE)
+  dbWriteTable(db.conn, 'cleanSales', sales.data, row.names=FALSE, overwrite=TRUE)
   
   # Close
-  dbDisconnect(sales.conn)
+  dbDisconnect(db.conn)
   
   
 

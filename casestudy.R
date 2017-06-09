@@ -24,6 +24,7 @@
   library(car)
   library(lmtest)
   library(gstat)
+  library(scales)
 
  ## Set data and code directory
 
@@ -50,9 +51,9 @@
   
  ## Load data
   
-  sales.db <- file.path(data.dir, 'seattleCaseStudy.db')
+  data.db <- file.path(data.dir, 'seattleCaseStudy.db')
   
-  sales.conn <- dbConnect(dbDriver('SQLite'), sales.db)
+  sales.conn <- dbConnect(dbDriver('SQLite'), data.db)
   crime.data <- dbReadTable(sales.conn, 'Crime')
 
   # Fix the date field
@@ -141,6 +142,8 @@
   
  ## Compare appreciation rates to crime at the Beat level
   
+  ### MOVE TO PREPARE
+  
   # Create quarter variable
   sales.data$month <- as.numeric(substr(sales.data$sales.date, 6, 7))
   sales.data$qtr <- ((sales.data$month - 1) %/% 3) + 1
@@ -186,7 +189,7 @@
                               zero.policy=T))
       
       # Create model specification
-      beat.spec <- as.formula(base.adj.lm)
+      beat.spec <- as.formula(base.lm)
       beat.spec <- update(beat.spec, ~ . - sales.date)
       beat.spec <- update(beat.spec, ~ . + as.factor(qtr))
       
@@ -410,7 +413,7 @@
                                      data=sales.data)
   
   # Run the local GWR models
-  price.gwr <-gwr(gwr.spec, gwr.data, fit.points=sent.surf@coords, bandwidth=.1)
+  price.gwr <-gwr(gwr.spec, gwr.data, fit.points=sent.surf@coords, bandwidth=.01)
   
   # Extract the coefficients for Q4 appreciations
   gwr.coef <- price.gwr$SDF@data

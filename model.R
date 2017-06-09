@@ -23,6 +23,7 @@
   library(spdep)
   library(car)
   library(lmtest)
+  library(plm)
 
  ## Set data and code directory
 
@@ -35,14 +36,14 @@
 
  ## Set the database path and name  
 
-  sales.db <- file.path(data.dir, 'assessorData.db')
-
+  data.db <- file.path(data.dir, 'seattleCaseStudy.db')
+  
 ### Load data ----------------------------------------------------------------------------  
 
  ## Read in Sales File
 
-  sales.conn <- dbConnect(dbDriver('SQLite'), sales.db)
-  sales.data <- dbReadTable(sales.conn, 'cleanSales')
+  db.conn <- dbConnect(dbDriver('SQLite'), data.db)
+  sales.data <- dbReadTable(db.conn, 'cleanSales')
 
  ## Fix Dates
   

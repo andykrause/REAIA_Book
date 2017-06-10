@@ -65,7 +65,11 @@
   
   # Filter sales based on study relevancy (time period)
   sales.data <- dplyr::filter(.data=sales.data,
-                              sales.year >= 2011 & sales.year <= 2016)
+                              sales.year == 2016)
+  
+  # Mutate: Add qtr and month of sale
+  sales.data$month <- as.numeric(substr(sales.data$sales.date, 6, 7))
+  sales.data$qtr <- ((sales.data$month - 1) %/% 3) + 1
   
   # Mutate Major and Minor into a PIN identifier (custom function)
   sales.data <- buildPinx(X=sales.data)
@@ -307,8 +311,21 @@
  # Filter: Remove water precincts  
   beats <- dplyr::filter(beats, first_prec != '')
   
- # Save beats
-  save(beats, file=file.path(data.dir, 'geographic/beats.Rdata'))
+  # Add geographic area to the beats data
+  
+  # Extract area measurement from the shapefile
+  beat.polys <- beats.sp@polygons
+  poly.area <- unlist(lapply(beat.polys, function(x) x@area))
+  
+  # Convert to square miles
+  poly.area <- poly.area * (68.99 ^ 2)
+  
+  # Add to data
+  beats.sp@data$size <- poly.area
+  
+  # Save all beats shapefiles as an R object for loading later
+  save(beats, beats.sp, beats.spf, 
+       file= file.path(data.dir, 'geographic/beats.Rdata'))
   
 ## Integrate the Beat Identification to the sales
   
@@ -345,10 +362,6 @@
                       parcel.centroids[ , c('pinx', 'beat', 'longitude', 'latitude')],
                       by='pinx')
   
-  # Convert sales.date to character to write to database
-  sales.data <- dplyr::mutate(.data=sales.data,
-                              sales.date = as.character(sales.date))  
-  
   # Transform:  Reclassify the zoning variable
   sales.data$zoning[grep('LR1', sales.data$zoning)] <- 'LR1'
   sales.data$zoning[grep('LR2', sales.data$zoning)] <- 'LR2'
@@ -359,9 +372,6 @@
   sales.data$zoning[grep('RSL', sales.data$zoning)] <- 'Other'
   sales.data$zoning[grep('NR', sales.data$zoning)] <- 'Other'
   
-  # Write to the database
-  dbWriteTable(db.conn, 'prepSales', sales.data, row.names=FALSE, overwrite=TRUE)
-
 ### Crime Data ---------------------------------------------------------------------------  
   
  ## Read in Data
@@ -419,11 +429,111 @@
   crime.data <- dplyr::mutate(.data=crime.data,
                               crime.date = as.character(crime.date))  
   
+  
+ ## Integrate crime and sales data -------------------------------------------------------  
+  
+  # Fix the date field
+  crime.data$crime.date <- as.Date(crime.data$crime.date)
+  
+  # Limite crime data to 2015 or later  
+  crime.data <- crime.data[crime.data$year >= 2015, ]
+  
+  # Set distance threshold in Meters
+  dist.thres <- 400
+  
+  # Set blank values
+  sales.data$crime.violent <- 0
+  sales.data$crime.property <- 0
+  sales.data$crime.traffic <- 0
+  sales.data$crime.behavior <- 0
+  sales.data$crime.other <- 0
+  
+  # Loop through each and calculate local crime counts
+  for(j in 1:nrow(sales.data)){
+    
+    # Extract sales data
+    j.data <- sales.data[j,]
+    
+    # Calculate time difference
+    x.days <- j.data$sales.date - crime.data$crime.date
+    
+    # Limit crime data to time window
+    c.data <- crime.data[x.days > 0 & x.days < 365, ]
+    
+    # Calculate distances
+    j.dist <- distHaversine(j.data[,c('longitude', 'latitude')],
+                            c.data[,c('longitude', 'latitude')])
+    
+    # Limit data to those within threshold
+    cx.data <- c.data[j.dist < dist.thres, ]
+    
+    # Add count to the sales data
+    sales.data$crime.violent[j] <- length(which(cx.data$crime.type == 'violent'))
+    sales.data$crime.property[j] <- length(which(cx.data$crime.type == 'property'))
+    sales.data$crime.behavior[j] <- length(which(cx.data$crime.type == 'behavior'))
+    sales.data$crime.traffic[j] <- length(which(cx.data$crime.type == 'traffic'))
+    sales.data$crime.other[j] <- length(which(cx.data$crime.type == 'other'))
+    
+    # Report on progress
+    if(j %% 100 == 0){
+      cat('record number ', j, '\n')
+    }
+  }
+  
+### Prepare sentiment analyses
+ 
+  tweet.data <- dbReadTable(db.conn, 'SentimentTweets')
+  
+ ## Limit to Tweets in the city
+  
+  # Create city boundary
+  seattle.bound <- gUnaryUnion(beats.sp)
+  
+  # Convert tweet to spatial poing data frame
+  tweet.sp <- SpatialPointsDataFrame(cbind(tweet.data$longitude, tweet.data$latitude),
+                                     data=tweet.data)
+  proj4string(tweet.sp) <- CRS(proj4string(beats.sp))
+  
+  # Clip by city boundary
+  in.seattle <- gIntersects(tweet.sp, seattle.bound, byid=T)
+  tweet.sp <- tweet.sp[which(in.seattle), ]
+  
+  ## Create a dataset with only tweet with a non-zero sentiment
+  
+  # Make dataset
+  twsent.sp <- tweet.sp[tweet.sp@data$SentimentScore != 0, ]
+  
+  # Convert all tweets to -1 or 1
+  twsent.sp@data$SS <- ifelse(twsent.sp@data$SentimentScore < 0, -1, 1)
+  
+  # Create a simple DF
+  twsent <- twsent.sp@data
+  
+##########################################################################################  
+  
+  # Convert sales.date to character to write to database
+  sales.data <- dplyr::mutate(.data=sales.data,
+                              sales.date = as.character(sales.date))  
+  
+  # Convert sales.date to character to write to database
+  crime.data <- dplyr::mutate(.data=crime.data,
+                              crime.date = as.character(crime.date))  
+  
+  # Write to the database
+  dbWriteTable(db.conn, 'prepSales', sales.data, row.names=FALSE, overwrite=TRUE)
+  
   # Write out to database
   if(dbExistsTable(db.conn, 'Crime')){
     dbRemoveTable(db.conn, 'Crime')
   }
   dbWriteTable(db.conn, 'Crime', crime.data, row.names=FALSE)
+  
+  # Write out to database
+  if(dbExistsTable(db.conn, 'SentimentTweets')){
+    dbRemoveTable(db.conn, 'SentimentTweets')
+  }
+  dbWriteTable(db.conn, 'SentimentTweets', twsent, row.names=FALSE)
+  
   
   # Close
   dbDisconnect(db.conn)

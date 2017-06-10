@@ -169,9 +169,17 @@
   }
   dbWriteTable(db.conn, 'Crime', crime.data, row.names=FALSE)
   
-  ## Close connection to database
+###   
   
-  dbDisconnect(db.conn)
+ # Read in tweet sentiment data
+  tweet.sent <- read.csv(paste0(data.dir, 'tweetsentiment.csv'),
+                         header=T)
+  
+  # Write to database  
+  if(dbExistsTable(db.conn, 'SentimentTweets')){
+    dbRemoveTable(db.conn, 'SentimentTweets')
+  }
+  dbWriteTable(db.conn, 'SentimentTweets', tweet.sent, row.names=FALSE)
   
 ### Convert the Beats data into an R object ----------------------------------------------  
   
@@ -181,8 +189,26 @@
   # Transform the Coordinate Reference System  
   beats <- st_transform(beats, 4326)
   
-  # Save as an R object for loading later
-  save(beats, file= file.path(data.dir, 'geographic/beats.Rdata'))
+  # Convert beats shapefile from 'sf' to 'sp'
+  beats.sp <- as(beats, 'Spatial')
+  
+  # Add id and beat numbers
+  beats.sp@data$id <- paste0("ID", 1:nrow(beats.sp@data))
+  
+  # Convert to a fortified object (data.frame)
+  beats.spf <- broom::tidy(beats.sp)
+  beats.spf$beat <- beats.sp@data$beat[match(beats.spf$id, 
+                                             beats.sp@data$id)]
+  
+  # Save all beats shapefiles as an R object for loading later
+  save(beats, beats.sp, beats.spf, 
+       file= file.path(data.dir, 'geographic/beats.Rdata'))
+
+  ## Close connection to database
+  
+  dbDisconnect(db.conn)
+  
+  
   
 ##########################################################################################
 ##########################################################################################

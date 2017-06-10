@@ -42,10 +42,6 @@
 
   # Load beat spatial file
   load(file=file.path(data.dir, 'geographic/beats.Rdata'))
-
-  # Sent Tweets (MOVE THIS TO MANAGE, etc)  
-  tweet.sent <- read.csv('c:/dropbox/research/bigdatabook/data/tweetsentiment.csv',
-                         header=T)
   
 ### Crime on Price -----------------------------------------------------------------------
   
@@ -53,60 +49,10 @@
   
   data.db <- file.path(data.dir, 'seattleCaseStudy.db')
   
-  sales.conn <- dbConnect(dbDriver('SQLite'), data.db)
-  crime.data <- dbReadTable(sales.conn, 'Crime')
+  db.conn <- dbConnect(dbDriver('SQLite'), data.db)
+  crime.data <- dbReadTable(db.conn, 'Crime')
+  tweet.data <- dbReadTable(db.conn, 'SentimentTweets')
 
-  # Fix the date field
-  crime.data$crime.date <- as.Date(crime.data$crime.date)
-  
- ## Add crime stats to the sales data
-  ## MOVE TO PREPARE IN FUTURE
-   
-  # Limite crime data to 2015 or later  
-  crime.data <- crime.data[crime.data$year >= 2015, ]
-  
-  # Set distance threshold in Meters
-  dist.thres <- 400
-  
-  # Set blank values
-  sales.data$crime.violent <- 0
-  sales.data$crime.property <- 0
-  sales.data$crime.traffic <- 0
-  sales.data$crime.behavior <- 0
-  sales.data$crime.other <- 0
-  
-  # Loop through each and calculate local crime counts
-  for(j in 1:nrow(sales.data)){
-    
-    # Extract sales data
-    j.data <- sales.data[j,]
-    
-    # Calculate time difference
-    x.days <- j.data$sales.date - crime.data$crime.date
-    
-    # Limit crime data to time window
-    c.data <- crime.data[x.days > 0 & x.days < 365, ]
-    
-    # Calculate distances
-    j.dist <- distHaversine(j.data[,c('longitude', 'latitude')],
-                            c.data[,c('longitude', 'latitude')])
-    
-    # Limit data to those within threshold
-    cx.data <- c.data[j.dist < dist.thres, ]
-    
-    # Add count to the sales data
-    sales.data$crime.violent[j] <- length(which(cx.data$crime.type == 'violent'))
-    sales.data$crime.property[j] <- length(which(cx.data$crime.type == 'property'))
-    sales.data$crime.behavior[j] <- length(which(cx.data$crime.type == 'behavior'))
-    sales.data$crime.traffic[j] <- length(which(cx.data$crime.type == 'traffic'))
-    sales.data$crime.other[j] <- length(which(cx.data$crime.type == 'other'))
-    
-    # Report on progress
-    if(j %% 100 == 0){
-      cat('record number ', j, '\n')
-    }
-  }
-  
  ## Build crime model
   
   # OLS Specification
@@ -116,6 +62,7 @@
   
   
  ## Spatial error specification
+  
   # Build Data
   sales.sp <- SpatialPointsDataFrame(cbind(sales.data$longitude,
                                            sales.data$latitude),
@@ -141,13 +88,7 @@
                          zero.policy=TRUE)
   
  ## Compare appreciation rates to crime at the Beat level
-  
-  ### MOVE TO PREPARE
-  
-  # Create quarter variable
-  sales.data$month <- as.numeric(substr(sales.data$sales.date, 6, 7))
-  sales.data$qtr <- ((sales.data$month - 1) %/% 3) + 1
-  
+
   # Create table of crime counts by beat
   beat.crime <- dplyr::group_by(crime.data, zone.beat) %>% 
     dplyr::summarize(
@@ -230,24 +171,7 @@
       beat.crime$appr[b] <- NA
     }  
   }
-  
-  # Convert beats shapefile from 'sf' to 'sp'
-  beats.sp <- as(beats, 'Spatial')
-  beats.sp@data$id <- paste0("ID", 1:nrow(beats.sp@data))
-  beats.spf <- broom::tidy(beats.sp)
-  beats.spf$beat <- beats.sp@data$beat[match(beats.spf$id, 
-                                             beats.sp@data$id)]
-  
-  # Extract area measurement from the shapefile
-  btp <- beats.sp@polygons
-  llarea <- unlist(lapply(btp, function(x) x@area))
-  
-  # Convert to square miles
-  llarea <- llarea * (68.99 ^ 2)
-  
-  # Add to data
-  beats.sp@data$size <- llarea
-  
+
   # Add area measurement
   beat.crime$area <- beats.sp@data$size[match(beat.crime$zone.beat,
                                               beats.sp@data$beat)]
@@ -327,30 +251,9 @@
   
 ### Sentiment analysis -------------------------------------------------------------------  
   
- ## Limit to Tweets in the city (MOVE TO PREPARE)
-  
-  # Create city boundary
-  seattle.bound <- gUnaryUnion(beats.sp)
-  
-  # Convert tweet to spatial poing data frame
-  tweet.sp <- SpatialPointsDataFrame(cbind(tweet.sent$longitude, tweet.sent$latitude),
-                                     data=tweet.sent)
+  tweet.sp <- SpatialPointsDataFrame(cbind(tweet.data$longitude, tweet.data$latitude),
+                                     data=tweet.data)
   proj4string(tweet.sp) <- CRS(proj4string(beats.sp))
-  
-  # Clip by city boundary
-  in.seattle <- gIntersects(tweet.sp, seattle.bound, byid=T)
-  tweet.sp <- tweet.sp[which(in.seattle), ]
-  
- ## Create a dataset with only tweet with a non-zero sentiment
-  
-  # Make dataset
-  twsent.sp <- tweet.sp[tweet.sp@data$SentimentScore != 0, ]
-  
-  # Convert all tweets to -1 or 1
-  twsent.sp@data$SS <- ifelse(twsent.sp@data$SentimentScore < 0, -1, 1)
-  
-  # Create a simle DF
-  twsent <- twsent.sp@data
   
  ## Make plot of sentiment tweets
     
@@ -359,7 +262,7 @@
                  color='gray40', fill='gray80')+
     # coord_cartesian(xlim=c(min(sales.data$longitude), max(sales.data$longitude)),
     #                 ylim=c(min(sales.data$latitude), max(sales.data$latitude))) +
-     geom_point(data=twsent, 
+     geom_point(data=tweet.data, 
                 aes(x=longitude, y=latitude, color=as.factor(SS)), 
                 size=2) +
     scale_color_manual(values=c('blue', 'red'),

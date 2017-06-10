@@ -48,11 +48,7 @@
  ## Fix Dates
   
   sales.data$sales.date <- as.Date(sales.data$sales.date)
-
- ## MOVE TO PREPARE OR CLEAN (Limit to 2016)
   
-  sales.data <- dplyr::filter(sales.data, sales.year == 2016)
-
 ### Basic Modeling -----------------------------------------------------------------------
 
  ## Specify Base Model

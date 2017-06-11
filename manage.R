@@ -32,7 +32,7 @@
 
  ## Convert CSVs to SQLite
 
- if (!file.exists(data.db)){
+  if (!file.exists(data.db)){
   
    convertCSVtoSQLite(dataPathCurrent=file.path(data.dir, 'assessor'),
                       dataPathNew=data.dir,
@@ -163,21 +163,23 @@
   names(crime.data)[1] <- 'uid'
   
   # Write out to database
-  if(dbExistsTable(db.conn, 'Crime')){
+  if (dbExistsTable(db.conn, 'Crime')){
     dbRemoveTable(db.conn, 'Crime')
   }
   dbWriteTable(db.conn, 'Crime', crime.data, row.names=FALSE)
   
 ### Add Twitter sentiment data to database -----------------------------------------------   
   
- # Read in tweet sentiment data (availabe at REAIA github site)
-  tweet.sent <- read.csv(file=paste0('http://raw.githubusercontent.com/andykrause/',
-                                     'REAIA_Book/master/tweetSentiment.csv'))
+ # Read in tweet sentiment data  
+  tweet.sent <- read.csv(file.path(data.dir, 'tweets', 'sentimenttweets.csv'),
+                         header=TRUE)
   
-  # Write to database  
-  if(dbExistsTable(db.conn, 'SentimentTweets')){
+  # Remove if exists 
+  if (dbExistsTable(db.conn, 'SentimentTweets')){
     dbRemoveTable(db.conn, 'SentimentTweets')
   }
+  
+  # Write to database
   dbWriteTable(db.conn, 'SentimentTweets', tweet.sent, row.names=FALSE)
   
 ### Convert the Beats data into an R object ----------------------------------------------  

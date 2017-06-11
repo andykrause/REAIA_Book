@@ -532,44 +532,80 @@ We now add the twitter sentiment data (available from the REAIA Github site) to 
 First we load in the sentiment scored tweets directly from the Github site.  
 
 ```{r eval=FALSE}  
- # Read in tweet sentiment data (availabe at REAIA github site)
-  tweet.sent <- read.csv(file=paste0('http://raw.githubusercontent.com/andykrause/',
-                                     'REAIA_Book/master/tweetSentiment.csv'))
+
+ # Read in tweet sentiment data  
+  tweet.sent <- read.csv(file.path(data.dir, 'tweets', 'sentimenttweets.csv'),
+                         header=TRUE)
   
-  # Write to database  
-  if(dbExistsTable(db.conn, 'SentimentTweets')){
+  # Remove if exists 
+  if (dbExistsTable(db.conn, 'SentimentTweets')){
     dbRemoveTable(db.conn, 'SentimentTweets')
   }
+  
+  # Write to database
   dbWriteTable(db.conn, 'SentimentTweets', tweet.sent, row.names=FALSE)
-  
-### Convert the Beats data into an R object ----------------------------------------------  
-  
-  # Read in the Police Beats Data
+
+```
+
+#### Police Beat Spatial Data
+
+Finally, we manage the Seattle Police Beat spatial data.
+
+We begin by reading in the police beat boundaries as a simple features polygon object. 
+
+```{r eval=FALSE}  
+
   beats <- st_read(file.path(data.dir, 'beats', 'SPD_BEATS_WGS84.shp'), 
                    quiet=TRUE)
-  
-  # Transform the Coordinate Reference System  
+
+```
+
+We then transform the coordinate reference system.
+
+```{r eval=FALSE}  
+
   beats <- st_transform(beats, 4326)
+
+```
+
+As we will work with other spatial packages in later analyses, we also convert simple features (sf) object to a an *sp* object (an earlier form of spatial handling in R). To this, we add the beat numbers as a unique identifier. 
   
-  # Convert beats shapefile from 'sf' to 'sp'
+```{r eval=FALSE}  
+  
+  # Convert to sp object
   beats.sp <- as(beats, 'Spatial')
-  
+
   # Add id and beat numbers
   beats.sp@data$id <- paste0("ID", 1:nrow(beats.sp@data))
+
+```
+
+We then also convert the police beat coverage into a simple data frame format (fortified) that can be plotted in ggplot. This includes adding the beat identification code to the data frame. 
   
+```{r eval=FALSE}  
+
   # Convert to a fortified object (data.frame)
   beats.spf <- broom::tidy(beats.sp)
+  
+  # Add beat id
   beats.spf$beat <- beats.sp@data$beat[match(beats.spf$id, 
                                              beats.sp@data$id)]
   
-  # Save all beats shapefiles as an R object for loading later
+```
+
+Finally, we save all three object types of the beat polygon data to an r workspace for easier loading later on. 
+
+```{r eval=FALSE}  
+
   save(beats, beats.sp, beats.spf, 
        file= file.path(data.dir, 'geographic', 'beats.Rdata'))
 
-### End session --------------------------------------------------------------------------  
-  
- ## Close connection to database
-  
+```
+
+We finish the manage stage of our analysis by closing the connection to the database. 
+
+```{r eval=FALSE}  
+
   dbDisconnect(db.conn)
 
 ```

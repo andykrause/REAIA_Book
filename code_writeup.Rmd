@@ -37,13 +37,24 @@ In chapter 3, we install the necessary packages that we will use throughout this
 
 ```{r eval=FALSE}
 
+  install.packages('tidyverse')
   install.packages('sf')
-  install.packages('sp')  
+  install.packages('sp')
   install.packages('maptools')
   install.packages('rgeos')
-  install.packages('tidyverse')
+  install.packages('spgwr')
+  install.packages('spdep')
+  install.packages('geosphere')
+  install.packages('OpenStreetMap')
+  install.packages('gstat')
   install.packages('RODBC')
   install.packages('RSQLite')
+  install.packages('BMA')
+  install.packages('MASS')
+  install.packages('car')
+  install.packages('lmtest')
+  install.packages('plm')
+  install.packages('scales')
 
 ```
 

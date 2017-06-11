@@ -154,7 +154,7 @@
   # Save as an R object for loading later
   save(parcel.centroids, file= file.path(data.dir, 'geographic/parcelcentroids.Rdata'))
 
-### Crime Beat data
+### Add Crime Beat data to database ------------------------------------------------------
   
   # Read in data
   crime.data <- read.csv(file.path(data.dir, 'crime', 'seattle_crime.csv'))
@@ -169,11 +169,11 @@
   }
   dbWriteTable(db.conn, 'Crime', crime.data, row.names=FALSE)
   
-###   
+### Add Twitter sentiment data to database -----------------------------------------------   
   
  # Read in tweet sentiment data
-  tweet.sent <- read.csv(paste0(data.dir, 'tweetsentiment.csv'),
-                         header=T)
+  tweet.sent <- read.csv(file=paste0('http://raw.githubusercontent.com/andykrause/',
+                                     'REAIA_Book/master/tweetSentiment.csv'))
   
   # Write to database  
   if(dbExistsTable(db.conn, 'SentimentTweets')){
@@ -207,8 +207,6 @@
   ## Close connection to database
   
   dbDisconnect(db.conn)
-  
-  
   
 ##########################################################################################
 ##########################################################################################

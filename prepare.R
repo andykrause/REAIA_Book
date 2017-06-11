@@ -13,6 +13,8 @@
   library(tidyverse)
   library(RSQLite)
   library(RODBC)
+  library(geosphere)
+  library(rgeos)
   
  ## Set data and code directory
  
@@ -116,7 +118,7 @@
   
   # Transform:  Limit field names
   sales.data <- dplyr::select(.data=sales.data, pinx, rec.ID, sale.ID, SalePrice, 
-                              sales.date, sales.year)
+                              sales.date, sales.year, month, qtr)
   
   
   sales.data <- dplyr::rename(.data=sales.data, sale.price=SalePrice)
@@ -533,7 +535,6 @@
     dbRemoveTable(db.conn, 'SentimentTweets')
   }
   dbWriteTable(db.conn, 'SentimentTweets', twsent, row.names=FALSE)
-  
   
   # Close
   dbDisconnect(db.conn)

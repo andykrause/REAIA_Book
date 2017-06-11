@@ -936,7 +936,6 @@
   
 ### Write out ----------------------------------------------------------------------------
   
-  
   # Write to the database
   sales.data$sales.date <- as.character(sales.data$sales.date)
   dbWriteTable(db.conn, 'cleanSales', sales.data, row.names=FALSE, overwrite=TRUE)

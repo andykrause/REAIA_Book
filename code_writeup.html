@@ -183,14 +183,14 @@ Note that RStudio is not necessary but it is a helpful interactive development e
 <p>Before executing the code file <em>gather.R</em>, the user must specify the directory into which the downloaded data will be stored, unzipped, etc. In the example below we have used <strong>c:/temp/</strong> as the directory. You should delete this and use a directory of your choice.</p>
 <pre class="r"><code>  data.dir &lt;- 'c:/temp/'</code></pre>
 <p>Next, we check to see if a sub-directory to store the raw zip files exists. If not, we create one called <em>raw_zip_files</em>.</p>
-<pre class="r"><code>  if(!dir.exists(file.path(data.dir, 'raw_zip_files'))){
+<pre class="r"><code>  if (!dir.exists(file.path(data.dir, 'raw_zip_files'))){
     dir.create(file.path(data.dir, 'raw_zip_files'))
   }</code></pre>
 <p>We now check to see if the GIS shapefile of the Seattle Police Department Beat Districts has already been downloaded. If not, we download it from the internet.</p>
 <pre class="r"><code>  # Check if file exists
-  if(!file.exists(file.path(data.dir, 'raw_zip_files', 'beats.zip'))){
+  if (!file.exists(file.path(data.dir, 'raw_zip_files', 'beats.zip'))){
   
-    # If not, download
+    # If it doesn't, then download
     download.file(url=paste0('https://data.seattle.gov/views/nnxn-434b/files/',
                          '96d998d4-ae20-4ea8-b912-436e68982a0d.zip'), 
                   destfile=file.path(data.dir, 'raw_zip_files', 'beats.zip'))
@@ -204,7 +204,7 @@ Note that RStudio is not necessary but it is a helpful interactive development e
   # Unzip the files
   unzip(zipfile=file.path(data.dir, 'raw_zip_files', 'beats.zip'),
         exdir=file.path(data.dir, 'beats'))</code></pre>
-<p>Next, we create a separate sub-directory for the geographic data (if not already present) and then download the property parcel (cadastre) shapefile (if not done so in the past) and unzip it into the <em>geographic</em> sub-directory.</p>
+<p>Next, we download the property parcel (cadastre) shapefile (if not done so in the past). We then create a separate sub-directory for the geographic data (if not already present) and then and unzip it into the <em>geographic</em> sub-directory.</p>
 <pre class="r"><code>  # Check if file exists
   if(!file.exists(file.path(data.dir, 'raw_zip_files', 'parcel_shapefile.zip'))){
     
@@ -281,40 +281,155 @@ Note that RStudio is not necessary but it is a helpful interactive development e
   library(sf)
   library(sp)</code></pre>
 <p>Next, the user must enter the directory where the data is stored, <strong>data.dir</strong> and the directory where the code has been downloaded, <strong>code.dir</strong>. Both directories should be identical to the directories entered in Chapter 5.</p>
-<pre class="r"><code>  data.dir &lt;- 'c:/temp/'
-  code.dir &lt;- 'c:/code/REAIA_Book/'</code></pre>
+<pre class="r"><code>  data.dir &lt;- 'c:/temp/'             # For Example
+  code.dir &lt;- 'c:/code/REAIA_Book/'  # For Example</code></pre>
 <p>We load in a set of custom functions that have been developed to help with the data integration and cleaning process.</p>
-<pre class="r"><code> source(paste0(code.dir, 'custom_functions.R'))</code></pre>
+<pre class="r"><code> source(file.path(code.dir, 'custom_functions.R'))</code></pre>
 <p>We also create a name and path for the database into which we’ll integrate all of the data.</p>
-<pre class="r"><code>  sales.db &lt;- file.path(data.dir, 'assessorData.db')</code></pre>
+<pre class="r"><code>  data.db &lt;- file.path(data.dir, 'seattleCaseStudy.db')</code></pre>
 <div id="manage-assessors-data" class="section level3">
 <h3>Manage Assessors data</h3>
 <p>To better manage the various assessor’s data files – the sales, parcel and residential building information – we combine them into a single SQLite database. This also allows for greater portability of the files. This same database will contain the various iterations of the cleaned sales data as well. The <strong>convertCSVtoSQLite()</strong> function is a custom function that we have developed for the task of combining various CSV files into a single SQLite database. If you don’t want to see the progress of the process you can change the <em>verbose</em> argument to FALSE.</p>
 <pre class="r"><code> ## Convert CSVs to SQLite
+
+ if (!file.exists(data.db)){
   
-  if(!file.exists(sales.db)){
-  
-    convertCSVtoSQLite(dataPathCurrent=file.path(data.dir, 'assessor'),
-                     dataPathNew = data.dir,
-                     newFileName = 'assessorData.db',
-                     fileNames=c('EXTR_RPSale.csv',
-                                 'EXTR_Parcel.csv',
-                                 'EXTR_Resbldg.csv'),
-                     tableNames = c('AllSales',
-                                    'Parcel',
-                                    'ResBldg'),
-                     overWrite=TRUE,
-                     verbose=TRUE,
-                     writeRowNames=FALSE)
+   convertCSVtoSQLite(dataPathCurrent=file.path(data.dir, 'assessor'),
+                      dataPathNew=data.dir,
+                      newFileName='seattleCaseStudy.db',
+                      fileNames=c('EXTR_RPSale.csv',
+                                  'EXTR_Parcel.csv',
+                                  'EXTR_Resbldg.csv'),
+                      tableNames=c('Sales',
+                                     'Parcel',
+                                     'ResBldg'),
+                      overWrite=TRUE,
+                      verbose=TRUE,
+                      writeRowNames=FALSE)
   }</code></pre>
-<div id="adding-unique-identifiers" class="section level4">
-<h4>Adding Unique Identifiers</h4>
-<!-- In this section we make a first pass through the sales transactions and eliminate sales that are obvious non-arms length transactions.   -->
-<!-- We start by opening a connection to the SQL database that we created above and reading in the raw sales information. -->
-<!-- ```{r eval=FALSE} -->
-<!--   sales.conn <- dbConnect(dbDriver('SQLite'), sales.db) -->
-<!--   raw.sales <- dbReadTable(sales.conn, 'AllSales') -->
-<!-- ``` -->
+<div id="sales-data-unique-identifiers" class="section level4">
+<h4>Sales data unique identifiers</h4>
+<p>In this section we create a set of unique identifiers for the sales data.</p>
+<p>We start by opening a connection to the SQL database that we created above and reading in the raw sales information.</p>
+<pre class="r"><code>  # Set connection
+  db.conn &lt;- dbConnect(dbDriver('SQLite'), data.db)
+  
+  # Read in sales data
+  sales.data &lt;- dbReadTable(db.conn, 'Sales')</code></pre>
+<p>We then use a multiple step process to create a unique identifer field, based on the excise tax affidavit number. We begin by creating a new field called <strong>UID</strong> that contains the excise tax number. We then re-order the columns to put this value on the far left and then sort the data by the <strong>UID</strong> field.</p>
+<pre class="r"><code>  # Make new UID from ExciseTaxNbr
+  sales.data &lt;- dplyr::mutate(sales.data, UID=ExciseTaxNbr)
+  
+  # Place Excise Tax Number on far left
+  sales.data &lt;- dplyr::select(sales.data, UID, everything())
+
+  # Order by that field
+  sales.data &lt;- dplyr::arrange(sales.data, UID)</code></pre>
+<p>As some of these numbers are duplicates due to multiple parcel (or property) sales, we must do a little more work to make this a unique identifier. First, we create a separate data frame of those excise tax numbers that appear more than once.</p>
+<pre class="r"><code>  uid.mult &lt;- sales.data %&gt;% 
+    dplyr::group_by(UID) %&gt;%
+      dplyr::summarize(rec.count=n()) %&gt;%
+       dplyr::filter(rec.count &gt; 1)</code></pre>
+<p>Second, we create a vector showing the count or number of times each of the duplicated UIDs appear.</p>
+<pre class="r"><code>  # Develop a list full of proper suffixes
+  uid.suffix &lt;- lapply(split(uid.mult, uid.mult$UID), 
+                       function(x) 1:(x$rec.count))
+  names(uid.suffix) &lt;- NULL</code></pre>
+<p>We then add these counts (suffix) to the sales data. Those with a UID that is unique receive a 0. Finally, we add the suffix value to the original UID to make an actual unique identifier. The suffix field is removed.</p>
+<pre class="r"><code>  # Apply suffix to sales.data
+  sales.data$uid.suffix &lt;- 0
+  sales.data$uid.suffix[sales.data$UID %in% uid.mult$UID] &lt;- unlist(uid.suffix)
+  
+  # Concatenate to make an unique ID
+  sales.data$UID &lt;- ifelse(sales.data$uid.suffix == 0,
+                           sales.data$UID,
+                           paste0(sales.data$UID, '..', sales.data$uid.suffix))
+  
+  # Remove uid.suffix field
+  sales.data$uid.suffix &lt;- NULL</code></pre>
+<p>We write this data back to the database, removing the old table first.</p>
+<pre class="r"><code>  dbRemoveTable(db.conn, 'Sales')
+  dbWriteTable(db.conn, 'Sales', sales.data, row.names=FALSE)</code></pre>
+</div>
+<div id="parcel-and-res-bldg-data-unique-identifiers" class="section level4">
+<h4>Parcel and res bldg data unique identifiers</h4>
+<p>Here we add unique identifiers to the King County Assessors parcel and residential building tabular data. The unique identifiers (<strong>pinx</strong>) are simply an extension of the County’s parcel identification numbers (PINs) where we add two leading ’.’s in order to avoid dropped leading zeros in future uses. A custom function call <strong>buildPinx()</strong> is used to accomplish this. Full code for the <strong>buildPinx()</strong> function can be found in the <em>custom_functions.R</em> file.</p>
+<p>We start by reading the raw parcel tabular data, creating the <strong>pinx</strong> unique identifier and then writing it back to the database.</p>
+<pre class="r"><code>  # Read in data
+  parcel.data &lt;- dbReadTable(db.conn, 'Parcel')
+  
+  # Add unique pinx field
+  parcel.data &lt;- buildPinx(parcel.data)
+  
+  # Write out
+  dbRemoveTable(db.conn, 'Parcel')
+  dbWriteTable(db.conn, 'Parcel', parcel.data, row.names=FALSE)</code></pre>
+<p>We then do the same with the residential building tabular data. As some properties have more than one residential building a suffix is added here to indicate which building it is.</p>
+<pre class="r"><code>  # Read in data
+  resbldg.data &lt;- dbReadTable(db.conn, 'ResBldg')
+  
+  # Add unique pinx field
+  resbldg.data &lt;- buildPinx(resbldg.data)
+  
+  # Add the bldgnbr to complete unique id
+  resbldg.data$pinx &lt;- paste0(resbldg.data$pinx, '.', resbldg.data$BldgNbr)
+  names(resbldg.data)[1] &lt;- 'BldgID'
+  
+  # Write out
+  dbRemoveTable(db.conn, 'ResBldg')
+  dbWriteTable(db.conn, 'ResBldg', resbldg.data, row.names=FALSE)</code></pre>
+<p>As we have loaded a number of large datasets, we clean our our working RAM here.</p>
+<pre class="r"><code>  rm(resbldg.data); rm(parcel.data); rm(sales.data)
+  gc()</code></pre>
+</div>
+<div id="parcel-shapefile-conversion" class="section level4">
+<h4>Parcel Shapefile conversion</h4>
+<p>We now load in the parcel shapefile and convert it from a polygon to a point coverage. We also change the coordinate reference system.</p>
+<p>We start by loading the parcel shapefile from the King County GIS department into R as a simple features object (sf).</p>
+<pre class="r"><code>  parcels &lt;- st_read(file.path(data.dir, 'geographic', 'parcel', 'parcel.shp'), 
+                     quiet=TRUE)</code></pre>
+<p>We then transform the coordinate reference system to match the other spatial data we will use later.</p>
+<pre class="r"><code>  parcels &lt;- st_transform(parcels, 4326)</code></pre>
+<p>We then extract the centroid of each parcel polygon and conver this to a simple features data frame. We add the parcel identification number to each point as the unique identifier.</p>
+<pre class="r"><code>  # Extract centroid Lat longs
+  parcel.centroids &lt;- st_centroid(parcels)
+  
+  # Convert to a simple features data.frame
+  parcel.centroids &lt;- st_sf(parcel.centroids)
+  
+  # Add PIN values
+  parcel.centroids$PIN &lt;- parcels$PIN</code></pre>
+<p>Finally, we save this object as an .Rdata file for faster loading in the future.</p>
+<pre class="r"><code>  save(parcel.centroids, file=file.path(data.dir, 'geographic', 'parcelcentroids.Rdata'))</code></pre>
+</div>
+</div>
+<div id="add-crime-beat-data-to-database" class="section level3">
+<h3>Add Crime Beat data to database ——————————————————</h3>
+<p># Read in data crime.data &lt;- read.csv(file.path(data.dir, ‘crime’, ‘seattle_crime.csv’))</p>
+<p># Convert names names(crime.data) &lt;- tolower(names(crime.data)) names(crime.data)[1] &lt;- ‘uid’</p>
+<p># Write out to database if(dbExistsTable(db.conn, ‘Crime’)){ dbRemoveTable(db.conn, ‘Crime’) } dbWriteTable(db.conn, ‘Crime’, crime.data, row.names=FALSE)</p>
+</div>
+<div id="add-twitter-sentiment-data-to-database" class="section level3">
+<h3>Add Twitter sentiment data to database ———————————————–</h3>
+<p># Read in tweet sentiment data (availabe at REAIA github site) tweet.sent &lt;- read.csv(file=paste0(‘<a href="http://raw.githubusercontent.com/andykrause/" class="uri">http://raw.githubusercontent.com/andykrause/</a>’, ‘REAIA_Book/master/tweetSentiment.csv’))</p>
+<p># Write to database<br />
+if(dbExistsTable(db.conn, ‘SentimentTweets’)){ dbRemoveTable(db.conn, ‘SentimentTweets’) } dbWriteTable(db.conn, ‘SentimentTweets’, tweet.sent, row.names=FALSE)</p>
+</div>
+<div id="convert-the-beats-data-into-an-r-object--" class="section level3">
+<h3>Convert the Beats data into an R object ———————————————-</h3>
+<p># Read in the Police Beats Data beats &lt;- st_read(file.path(data.dir, ‘beats’, ‘SPD_BEATS_WGS84.shp’), quiet=TRUE)</p>
+<p># Transform the Coordinate Reference System<br />
+beats &lt;- st_transform(beats, 4326)</p>
+<p># Convert beats shapefile from ‘sf’ to ‘sp’ beats.sp &lt;- as(beats, ‘Spatial’)</p>
+<p># Add id and beat numbers <a href="mailto:beats.sp@data$id">beats.sp@data$id</a> &lt;- paste0(“ID”, 1:nrow(<a href="mailto:beats.sp@data">beats.sp@data</a>))</p>
+<p># Convert to a fortified object (data.frame) beats.spf &lt;- broom::tidy(beats.sp) beats.spf<span class="math inline">\(beat &lt;- beats.sp@data\)</span>beat[match(beats.spf<span class="math inline">\(id,  beats.sp@data\)</span>id)]</p>
+<p># Save all beats shapefiles as an R object for loading later save(beats, beats.sp, beats.spf, file= file.path(data.dir, ‘geographic’, ‘beats.Rdata’))</p>
+</div>
+<div id="end-session" class="section level3">
+<h3>End session ————————————————————————–</h3>
+<p>## Close connection to database</p>
+<p>dbDisconnect(db.conn)</p>
+<p>```</p>
 <!-- We then remove all sales that are missing one of the two necessary components of the Parcel Identification Number (PIN), the key that is used to link sale records to information about the property characteristics found in the other data files. We save this filtered set of sales into a new object names **clean.sales**.  -->
 <!-- ```{r eval=FALSE} -->
 <!--   clean.sales <- raw.sales[raw.sales$Major > 0, ] -->
@@ -553,7 +668,6 @@ Note that RStudio is not necessary but it is a helpful interactive development e
 <!--   # Close Database connection -->
 <!--   dbDisconnect(sales.conn) -->
 <!-- ``` -->
-</div>
 </div>
 </div>
 <div id="chapter-7" class="section level2">

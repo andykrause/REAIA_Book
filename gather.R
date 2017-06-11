@@ -120,6 +120,17 @@
                            'accessType=DOWNLOAD'), 
                 destfile=file.path(data.dir, 'crime', 'seattle_crime.csv' ))
   
+### Gather Twitter Sentiment Data --------------------------------------------------------  
+  
+  # Create a directory for assessor data if one doesn't exist
+  if (!dir.exists(file.path(data.dir, 'tweets'))){
+    dir.create(file.path(data.dir, 'tweets'))
+  }
+  
+  # Download .csv from the City of Seattle
+  download.file(url=paste0('http://raw.githubusercontent.com/REAIABook/',
+                           'REAIABook/master/tweetSentiment.csv'), 
+                destfile=file.path(data.dir, 'tweets', 'sentimenttweets.csv' ))
   
 ##########################################################################################
 ##########################################################################################

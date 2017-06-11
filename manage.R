@@ -22,7 +22,7 @@
 
  ## Load custom source files
 
-  source(paste0(code.dir, 'custom_functions.R'))  
+  source(file.path(code.dir, 'custom_functions.R'))  
 
  ## Set the database path and name  
 
@@ -57,7 +57,6 @@
  ## Sales
   
   # Read in data
-
   sales.data <- dbReadTable(db.conn, 'Sales')
 
   # Make new UID from ExciseTaxNbr
@@ -87,7 +86,7 @@
   sales.data$uid.suffix[sales.data$UID %in% uid.mult$UID] <- unlist(uid.suffix)
   
   # Concatenate to make an unique ID
-  sales.data$UID <- ifelse(sales.data$uid.suffix==0,
+  sales.data$UID <- ifelse(sales.data$uid.suffix == 0,
                            sales.data$UID,
                            paste0(sales.data$UID, '..', sales.data$uid.suffix))
   
@@ -131,13 +130,13 @@
   rm(resbldg.data); rm(parcel.data); rm(sales.data)
   gc()
   
- 
 ### Convert the Parcel Cadastral data into R objects for faster loading, etc. later ------
   
-  ## Convert the parcel file to centroids
+ ## Convert the parcel file to centroids
   
   # Load in parcel file
-  parcels <- st_read(file.path(data.dir, 'geographic/parcel/parcel.shp'), quiet=TRUE)
+  parcels <- st_read(file.path(data.dir, 'geographic', 'parcel', 'parcel.shp'), 
+                     quiet=TRUE)
 
   # Convert to appropriate CRS
   parcels <- st_transform(parcels, 4326)
@@ -152,7 +151,7 @@
   parcel.centroids$PIN <- parcels$PIN
   
   # Save as an R object for loading later
-  save(parcel.centroids, file= file.path(data.dir, 'geographic/parcelcentroids.Rdata'))
+  save(parcel.centroids, file=file.path(data.dir, 'geographic', 'parcelcentroids.Rdata'))
 
 ### Add Crime Beat data to database ------------------------------------------------------
   
@@ -171,7 +170,7 @@
   
 ### Add Twitter sentiment data to database -----------------------------------------------   
   
- # Read in tweet sentiment data
+ # Read in tweet sentiment data (availabe at REAIA github site)
   tweet.sent <- read.csv(file=paste0('http://raw.githubusercontent.com/andykrause/',
                                      'REAIA_Book/master/tweetSentiment.csv'))
   
@@ -184,7 +183,8 @@
 ### Convert the Beats data into an R object ----------------------------------------------  
   
   # Read in the Police Beats Data
-  beats <- st_read(file.path(data.dir, 'beats/SPD_BEATS_WGS84.shp'), quiet=TRUE)
+  beats <- st_read(file.path(data.dir, 'beats', 'SPD_BEATS_WGS84.shp'), 
+                   quiet=TRUE)
   
   # Transform the Coordinate Reference System  
   beats <- st_transform(beats, 4326)
@@ -202,9 +202,11 @@
   
   # Save all beats shapefiles as an R object for loading later
   save(beats, beats.sp, beats.spf, 
-       file= file.path(data.dir, 'geographic/beats.Rdata'))
+       file= file.path(data.dir, 'geographic', 'beats.Rdata'))
 
-  ## Close connection to database
+### End session --------------------------------------------------------------------------  
+  
+ ## Close connection to database
   
   dbDisconnect(db.conn)
   

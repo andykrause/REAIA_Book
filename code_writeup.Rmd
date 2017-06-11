@@ -84,7 +84,7 @@ Next, we check to see if a sub-directory to store the raw zip files exists.  If 
 
 ```{r eval=FALSE}
 
-  if(!dir.exists(file.path(data.dir, 'raw_zip_files'))){
+  if (!dir.exists(file.path(data.dir, 'raw_zip_files'))){
     dir.create(file.path(data.dir, 'raw_zip_files'))
   }
 
@@ -95,13 +95,15 @@ We now check to see if the GIS shapefile of the Seattle Police Department Beat D
 ```{r eval=FALSE}
 
   # Check if file exists
-  if(!file.exists(file.path(data.dir, 'raw_zip_files', 'beats.zip'))){
+  if (!file.exists(file.path(data.dir, 'raw_zip_files', 'beats.zip'))){
   
-    # If not, download
+    # If it doesn't, then download
     download.file(url=paste0('https://data.seattle.gov/views/nnxn-434b/files/',
                          '96d998d4-ae20-4ea8-b912-436e68982a0d.zip'), 
                   destfile=file.path(data.dir, 'raw_zip_files', 'beats.zip'))
   }  
+ 
+
 ```
 
 We then check to see if a separate directory for the beats data exists.  If it doesn't we create it.  We then unzip the **beats.zip** file into the new *beats* directory.  
@@ -119,7 +121,7 @@ We then check to see if a separate directory for the beats data exists.  If it d
 
 ```
 
-Next, we create a separate sub-directory for the geographic data (if not already present) and then download the property parcel (cadastre) shapefile (if not done so in the past) and unzip it into the *geographic* sub-directory.  
+Next, we  download the property parcel (cadastre) shapefile (if not done so in the past).  We then create a separate sub-directory for the geographic data (if not already present) and then and unzip it into the *geographic* sub-directory.  
 
 ```{r eval=FALSE}
 
@@ -211,7 +213,6 @@ We then do the same for the parcel and the residential building (resbldg) inform
         exdir=file.path(data.dir, 'assessor'))
 
 ```
-
 
 ## Chapter 6
 
